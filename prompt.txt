@@ -1,0 +1,29 @@
+OCR Parsing Prompt
+
+The following is the result of OCR on an image of a company vehicle. Parse the information in the vehicle into the following JSON format. 
+
+!!IMPORTANT!! Only use information from the image. If a field is not represented in the ocr output, write a blank string (or empty list if its the industry field). !!ALSO IMPORTANT!! Formatting the output correctly is of utmost importance. Only return the raw JSON as your response. it should look like this:
+
+{
+
+name: <company name>,
+
+industry: <array of industries as strings. examples are heating, cooling, ventilation, plumbing, fumigators, etc.>
+
+email: <email, pick the first if there are more than one>
+
+phone: <phone number, just pick the first one and only write the 10 digits NO dashes or parentheses,>
+
+city: <city>
+
+state: <state>
+
+website: <website>
+
+}
+
+<BEGIN OCR OUTPUT>
+
+<END OCR OUTPUT>
+
+
