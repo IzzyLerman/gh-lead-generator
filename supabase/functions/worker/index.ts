@@ -3,49 +3,97 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { ParsedCompanyOutputSchema, ParsedCompanyOutput } from "./../_shared/schema.ts";
 
-const supabase = createClient(
-  Deno.env.get('SUPABASE_URL')!,
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-);
+// Utility: Get environment variable with error if missing
+function getEnvVar(key: string): string {
+  const value = Deno.env.get(key);
+  if (!value) throw new Error(`Missing environment variable: ${key}`);
+  return value;
+}
 
+// Utility: Log helper
+function log(message: string, ...args: unknown[]) {
+  console.log(`[worker] ${message}`, ...args);
+}
+
+// Utility: Call Vision API for OCR
+async function callVisionAPI(imageRequests: any[], url: string, key: string) {
+  const response = await fetch(`${url}?key=${key}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requests: imageRequests }),
+    }
+  );
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Vision API error ${response.status}: ${text}`);
+  }
+  const json = await response.json();
+  if (!json.responses) throw new Error("Malformed Vision API response");
+  return json.responses;
+}
+
+// Utility: Call LLM API
+async function callLLMAPI(request: any, url: string, key: string) {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01'
+    },
+    body: JSON.stringify(request)
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`LLM API error ${response.status}: ${text}`);
+  }
+  return response.json();
+}
+
+// Utility: Validate LLM output
+function validateLLMOutput(json: any) {
+  if (!json || typeof json !== 'object') throw new Error('LLM output is not an object');
+  const requiredFields = ['name', 'industry', 'email', 'phone', 'city', 'state'];
+  for (const field of requiredFields) {
+    if (!(field in json)) throw new Error(`Missing field in LLM output: ${field}`);
+  }
+}
+
+const SUPABASE_URL = getEnvVar('SUPABASE_URL');
+const SUPABASE_SERVICE_ROLE_KEY = getEnvVar('SUPABASE_SERVICE_ROLE_KEY');
+const ANTHROPIC_API_KEY = getEnvVar('ANTHROPIC_API_KEY');
+const ANTHROPIC_API_URL = getEnvVar('ANTHROPIC_API_URL');
+const VISION_API_URL = getEnvVar('VISION_API_URL');
+const VISION_API_KEY = getEnvVar('VISION_API_KEY');
+
+const supabase = createClient(
+  SUPABASE_URL,
+  SUPABASE_SERVICE_ROLE_KEY
+);
 const pgmq_public = createClient(
-  Deno.env.get('SUPABASE_URL')!,
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+  SUPABASE_URL,
+  SUPABASE_SERVICE_ROLE_KEY,
   { db: { schema: 'pgmq_public' } }
 );
 
-const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY')!;
-const ANTHROPIC_API_URL = Deno.env.get('ANTHROPIC_API_URL')!;
-const VISION_API_URL = Deno.env.get("VISION_API_URL")!;
-const VISION_API_KEY = Deno.env.get("VISION_API_KEY")!;
-
 const parseOCRPromptHead = `
-The following is the result of OCR on an image of a company vehicle. Parse the information in the vehicle into the following JSON format.
-
-!!IMPORTANT!! Only use information from the image. If a field is not represented in the ocr output, write a blank string (or empty list if its the industry field). !!ALSO IMPORTANT!! Formatting the output correctly is of utmost importance. Only return the raw JSON as your response. it should look like this:
+The following is the result of OCR on an image of a company vehicle. Parse the information in the vehicle into the following JSON format. !!IMPORTANT!! Only use information from the image. If a field is not represented in the ocr output, write a blank string (or empty list if its the industry field). !!ALSO IMPORTANT!! Formatting the output correctly is of utmost importance. Only return the raw JSON as your response. it should look like this:
 
 {
-
-name: <company name>,
-
-industry: <array of industries as strings. examples are heating, cooling, ventilation, plumbing, fumigators, etc.>
-
-email: <email, pick the first if there are more than one>
-
-phone: <phone number, just pick the first one and only write the 10 digits NO dashes or parentheses>
-
-city: <city>
-
-state: <state>
-
-website: <website>
-
+    name: <company name>,
+    industry: <array of industries as strings. examples are heating, cooling, ventilation, plumbing, fumigators, etc.>
+    email: <email, pick the first if there are more than one>
+    phone: <phone number, just pick the first one and only write the 10 digits NO dashes or parentheses>
+    city: <city>
+    state: <state>
+    website: <website>
 }
 
 <BEGIN OCR OUTPUT>\n
 `
-
 const parseOCRPromptFooter = `\n<END OCR OUTPUT>`;
+
 function removeEmptyFields(obj) {
   const filtered = {};
   
@@ -94,7 +142,7 @@ Deno.serve(async (req) => {
                        .createSignedUrl(message.message.image_path, 60)
                        .then(({ data, error }) => {
                          if (error) {
-                           throw new Error(`Failed to create signed URL for ${imagePath}: ${error.message}`);
+                           throw new Error(`Failed to create signed URL for ${message.message.image_path}: ${error.message}`);
                          }
                          return { signedUrl: data.signedUrl, messageId: message.id };
                        })
@@ -104,33 +152,36 @@ Deno.serve(async (req) => {
             const signedUrls = await Promise.all(signedUrlPromises);
             let n = signedUrls.length;
 
-            console.log(`Processing ${n} messages:`);
+            log(`Processing ${n} messages:`);
 
+
+            // OCR
             const requests = signedUrls.map(( signedUrl ) => ({
                     image: { source: { imageUri: signedUrl.signedUrl } },
                     features: [{ type: "TEXT_DETECTION" }],
             }));
 
-            console.log("Cloud Vision Body: ", requests);
+            log("Cloud Vision Body: ", requests);
 
-            // OCR 
-
-            const response = await fetch(`${VISION_API_URL}?key=${VISION_API_KEY}`,
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  requests: requests,
-                }),
-              }
-            );
+            const responses = await callVisionAPI(requests, VISION_API_URL, VISION_API_KEY);
+            log("OCR Resuts: ", responses);
 
 
-            const {responses} = await response.json();
-           // console.log("OCR Resuts: ", responses);
+            if (!responses) {
+                throw new Error("Malformed response: no 'responses' field.");
+            }
 
+           // Check for per-request errors
+            responses.forEach((res, i) => {
+                if (res.error) {
+                    log(`Error in OCR response #${i}:`, res.error);
+                }   
+            });
+
+
+            
             // LLM parses OCR
-            //
+            
             const LLMRequests = responses.map((res, index) => ({
                      model: "claude-3-5-haiku-20241022",
                      max_tokens: 1024,
@@ -146,26 +197,16 @@ Deno.serve(async (req) => {
             let LLMPromises = [];
 
             for (const request of LLMRequests) {
-                console.log("LLM body", request);
+                log("LLM body", request);
                 LLMPromises.push(
-                    fetch(ANTHROPIC_API_URL, {
-                     method: 'POST',
-                     headers: {
-                       'Content-Type': 'application/json',
-                       'x-api-key': ANTHROPIC_API_KEY,
-                       'anthropic-version': '2023-06-01'
-                     },
-                     body: JSON.stringify(request)
-
-                    })
+                    callLLMAPI(request, ANTHROPIC_API_URL, ANTHROPIC_API_KEY)
                 .then(response => {
                         if(!response.ok) {
                             throw new Error(`LLM Call failed: ${response.statusText}`);
                         }
                         try{
-                            //let output = response.json()
-                            //console.log(JSON.stringify(output))
-                            return response.json();
+                            validateLLMOutput(response);
+                            return response;
                         }
                         catch (error) {
                             return new Response(JSON.stringify({ error: error.message }), {
@@ -178,7 +219,7 @@ Deno.serve(async (req) => {
             }
 
             const LLMResults = await Promise.all(LLMPromises);
-            console.log(LLMResults);
+            log(LLMResults);
             const parsedJSONs = LLMResults.map((res) => JSON.parse(res.content[0].text));
 
             const companyJSONs = parsedJSONs.map((json) => ({
@@ -190,10 +231,10 @@ Deno.serve(async (req) => {
                 state: [json.state]
             }));
 
-            console.log("parsed company JSON: ", companyJSONs);
+            log("parsed company JSON: ", companyJSONs);
 
             const cleanedJSONs = companyJSONs.map((c) => removeEmptyFields(c));
-            console.log("cleaned company JSON: ", cleanedJSONs);
+            log("cleaned company JSON: ", cleanedJSONs);
 
 
             // Insert info to company table
@@ -209,7 +250,7 @@ Deno.serve(async (req) => {
                     message_id: message.msg_id,
                 });
                 if (deleteError) {
-                    console.error('Error deleting message:', deleteError);
+                    log('Error deleting message:', deleteError);
                 }
           }
           
