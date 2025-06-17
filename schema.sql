@@ -6,6 +6,19 @@ CREATE TABLE public."vehicle-photos" (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+--Companies
+CREATE TABLE companies (
+ id SERIAL PRIMARY KEY,
+ name TEXT NOT NULL,
+ industry TEXT[] DEFAULT '{}',
+ email TEXT[] DEFAULT '{}',
+ phone TEXT[] DEFAULT '{}',
+ city TEXT DEFAULT '',
+ state TEXT DEFAULT '',
+ created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+ updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 --Create metadata entry upon inserting to vehicle img store
 CREATE OR REPLACE FUNCTION public.insertimg()
 RETURNS trigger
@@ -29,3 +42,4 @@ EXECUTE PROCEDURE public.insertimg();
 -- Enable and create pgmq
 CREATE extension IF NOT EXISTS pgmq CASCADE;
 SELECT pgmq.create('image-processing');
+
