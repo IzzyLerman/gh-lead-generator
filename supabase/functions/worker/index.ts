@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
-import { ParsedCompanyOutputSchema, ParsedCompanyOutput } from "./../_shared/schema.ts";
+import { ParsedCompanyDataSchema, ParsedCompanyData } from "./../_shared/schema.ts";
 
 // Utility: Get environment variable with error if missing
 function getEnvVar(key: string): string {
@@ -51,48 +51,23 @@ async function callLLMAPI(request: any, url: string, key: string) {
   return response.json();
 }
 
-// Utility: Validate LLM output
-function validateLLMOutput(json: any) {
-  if (!json || typeof json !== 'object') throw new Error('LLM output is not an object');
-  const requiredFields = ['name', 'industry', 'email', 'phone', 'city', 'state'];
-  for (const field of requiredFields) {
-    if (!(field in json)) throw new Error(`Missing field in LLM output: ${field}`);
-  }
+function normalizeName(name: string): string {
+  return name.toLowerCase() 
+    .normalize("NFKD")
+    .replace(/[^\w\s]/g, "")                        
+    .replace(/\b(?:inc|corp|llc|co|ltd|plc)\b/gi, "")
+    .trim();                                            
 }
 
-const SUPABASE_URL = getEnvVar('SUPABASE_URL');
-const SUPABASE_SERVICE_ROLE_KEY = getEnvVar('SUPABASE_SERVICE_ROLE_KEY');
-const ANTHROPIC_API_KEY = getEnvVar('ANTHROPIC_API_KEY');
-const ANTHROPIC_API_URL = getEnvVar('ANTHROPIC_API_URL');
-const VISION_API_URL = getEnvVar('VISION_API_URL');
-const VISION_API_KEY = getEnvVar('VISION_API_KEY');
-
-const supabase = createClient(
-  SUPABASE_URL,
-  SUPABASE_SERVICE_ROLE_KEY
-);
-const pgmq_public = createClient(
-  SUPABASE_URL,
-  SUPABASE_SERVICE_ROLE_KEY,
-  { db: { schema: 'pgmq_public' } }
-);
-
-const parseOCRPromptHead = `
-The following is the result of OCR on an image of a company vehicle. Parse the information in the vehicle into the following JSON format. !!IMPORTANT!! Only use information from the image. If a field is not represented in the ocr output, write a blank string (or empty list if its the industry field). !!ALSO IMPORTANT!! Formatting the output correctly is of utmost importance. Only return the raw JSON as your response. it should look like this:
-
-{
-    name: <company name>,
-    industry: <array of industries as strings. examples are heating, cooling, ventilation, plumbing, fumigators, etc.>
-    email: <email, pick the first if there are more than one>
-    phone: <phone number, just pick the first one and only write the 10 digits NO dashes or parentheses>
-    city: <city>
-    state: <state>
-    website: <website>
+function normalizeEmail(email: string): string {
+    return email.toLowerCase()
 }
 
-<BEGIN OCR OUTPUT>\n
-`
-const parseOCRPromptFooter = `\n<END OCR OUTPUT>`;
+function normalizePhone(phone: string): string {
+    return phone.replace(/\D/g, "");
+}
+
+
 
 function removeEmptyFields(obj) {
   const filtered = {};
@@ -113,10 +88,76 @@ function removeEmptyFields(obj) {
   return filtered;
 }
 
+const upsertCompany = async (supabase, company) => {
+  if (!supabase || !company.name) {
+    const errorMessage = "Supabase client and company name are required.";
+    log(errorMessage);
+    return { data: null, success: false, error: { message: errorMessage } };
+  }
+
+  try {
+    const { data, error } = await supabase.rpc('upsert_company', {
+      p_name: company.name,
+      p_email: company.email ? company.email : null,
+      p_phone: company.phone ? company.phone : null,
+      p_industry: company.industry ? company.industry : [],
+      p_city: company.city ? company.city : null,
+      p_state: company.state ? company.state : null
+    });
+
+    if (error) {
+      // Re-throw the error to be caught by the calling try/catch block
+      throw(error);
+    }
+
+    log(`Successfully upserted company: ${company.name}`);
+    return { data, success: true, error:null};
+
+  } catch (error) {
+    log(`Error upserting company '${company.name}':`, error.message);
+    return { data: null, success: false,  error };
+  }
+};
+
+
+
+const parseOCRPromptHead = `
+The following is the result of OCR on an image of a company vehicle. Parse the information in the vehicle into the following JSON format. !!IMPORTANT!! Only use information from the image. If a field is not represented in the ocr output, write a blank string (or empty list if its the industry field). !!ALSO IMPORTANT!! Formatting the output correctly is of utmost importance. Only return the raw JSON as your response. it should look like this:
+
+{
+    name: <company name>,
+    industry: <array of industries as strings. examples are heating, cooling, ventilation, plumbing, fumigators, etc.>
+    email: <email, pick the first if there are more than one>
+    phone: <phone number, just pick the first one and only write the 10 digits NO dashes or parentheses>
+    city: <city>
+    state: <state>
+    website: <website>
+}
+
+<BEGIN OCR OUTPUT>\n
+`
+const parseOCRPromptFooter = `\n<END OCR OUTPUT>`;
+
+const SUPABASE_URL = getEnvVar('SUPABASE_URL');
+const SUPABASE_SERVICE_ROLE_KEY = getEnvVar('SUPABASE_SERVICE_ROLE_KEY');
+const ANTHROPIC_API_KEY = getEnvVar('ANTHROPIC_API_KEY');
+const ANTHROPIC_API_URL = getEnvVar('ANTHROPIC_API_URL');
+const VISION_API_URL = getEnvVar('VISION_API_URL');
+const VISION_API_KEY = getEnvVar('VISION_API_KEY');
+
+const supabase = createClient(
+  SUPABASE_URL,
+  SUPABASE_SERVICE_ROLE_KEY
+);
+const pgmq_public = createClient(
+  SUPABASE_URL,
+  SUPABASE_SERVICE_ROLE_KEY,
+  { db: { schema: 'pgmq_public' } }
+);
 
 Deno.serve(async (req) => {
     // Prevent infinite loops but shouldn't happen
-    const MAX_ITERS = 200;
+    const MAX_ITERS = 100;
     let iters = 0;
 
     while(iters < MAX_ITERS){
@@ -200,48 +241,59 @@ Deno.serve(async (req) => {
                 log("LLM body", request);
                 LLMPromises.push(
                     callLLMAPI(request, ANTHROPIC_API_URL, ANTHROPIC_API_KEY)
-                .then(response => {
-                        if(!response.ok) {
-                            throw new Error(`LLM Call failed: ${response.statusText}`);
-                        }
-                        try{
-                            validateLLMOutput(response);
+                    .then(response => {
+                        try {
                             return response;
+                        } catch (error) {
+                            throw new Error(`LLM output validation failed: ${error.message}`);
                         }
-                        catch (error) {
-                            return new Response(JSON.stringify({ error: error.message }), {
-                                status: 500,
-                                headers: { 'Content-Type': 'application/json' }
-                            })
-                        }
-                    }))
-                
+                    })
+                )
             }
 
             const LLMResults = await Promise.all(LLMPromises);
-            log(LLMResults);
-            const parsedJSONs = LLMResults.map((res) => JSON.parse(res.content[0].text));
+            log("LLM Output: " + JSON.stringify(LLMResults));
+            const parsedJSONs = await Promise.all(LLMResults.map(async (res, idx) => {
+                let attempts = 0;
+                let parsed, result;
+                do {
+                    parsed = JSON.parse(res.content[0].text);
+                    result = ParsedCompanyDataSchema.safeParse(parsed);
+                    if (result.success) {
+                        return parsed;
+                    }
+                    // If validation fails, recall the LLM (simulate by retrying the same request)
+                    log(`LLM output validation failed for message #${idx}, attempt ${attempts + 1}: ${result.error.message}`);
+                    // Optionally, you could re-call the LLM here with the same input if you want to actually retry
+                    attempts++;
+                } while (attempts < 2);
+                throw new Error(`LLM output validation failed after 2 attempts: ${result.error.message}`);
+            }));
 
             const companyJSONs = parsedJSONs.map((json) => ({
-                name: json.name,
+                name: normalizeName(json.name),
                 industry: json.industry,
-                email: [json.email],
-                phone: [json.phone],
-                city: [json.city],
-                state: [json.state]
+                email: normalizeEmail(json.email),
+                phone: normalizePhone(json.phone),
+                city: json.city,
+                state: json.state
             }));
 
             log("parsed company JSON: ", companyJSONs);
 
             const cleanedJSONs = companyJSONs.map((c) => removeEmptyFields(c));
-            log("cleaned company JSON: ", cleanedJSONs);
+            log("cleaned company JSON: ", cleanedJSONs); 
 
-
-            // Insert info to company table
-            const { data, error } = await supabase
-                .from('companies')
-                .insert(cleanedJSONs);
+            for (const company of cleanedJSONs) {
+                const result = await upsertCompany(supabase,  company);
+                if (!result.success) {
+                    log("Error upserting company ",company?.name, ": ", result.error);
+                }else{
+                    log("Successfully upserted ",company?.name);
+                }
+            }
             
+
 
           // If processing is successful, delete the message from the queue
             for (const message of messages) {

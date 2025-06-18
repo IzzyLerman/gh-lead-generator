@@ -102,7 +102,7 @@ Deno.serve(async (req) => {
     await enqueueImageJob(pgmq_public, uploadData.path);
     log(`Job enqueued for image: ${uploadData.path}`);
     await new Promise((resolve) => setTimeout(resolve, 1000));
-    await triggerWorker(WORKER_URL, SUPABASE_SERVICE_ROLE_KEY);
+    triggerWorker(WORKER_URL, SUPABASE_SERVICE_ROLE_KEY);
     log(`Worker triggered`);
     return new Response(JSON.stringify({ success: true, path: uploadData.path }), {
       headers: { "Content-Type": "application/json" },
