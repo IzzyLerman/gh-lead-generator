@@ -1,21 +1,21 @@
+/* Dequeue pgmq messages in batches of 5 and process the correspodnding image with OCR, then upsert the data into the company table.
+*/
+
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { ParsedCompanyDataSchema, ParsedCompanyData } from "./../_shared/schema.ts";
 
-// Utility: Get environment variable with error if missing
 function getEnvVar(key: string): string {
   const value = Deno.env.get(key);
   if (!value) throw new Error(`Missing environment variable: ${key}`);
   return value;
 }
 
-// Utility: Log helper
 function log(message: string, ...args: unknown[]) {
   console.log(`[worker] ${message}`, ...args);
 }
 
-// Utility: Call Vision API for OCR
 async function callVisionAPI(imageRequests: any[], url: string, key: string) {
   const response = await fetch(`${url}?key=${key}`,
     {
@@ -33,7 +33,6 @@ async function callVisionAPI(imageRequests: any[], url: string, key: string) {
   return json.responses;
 }
 
-// Utility: Call LLM API
 async function callLLMAPI(request: any, url: string, key: string) {
   const response = await fetch(url, {
     method: 'POST',
@@ -120,7 +119,6 @@ const upsertCompany = async (supabase, company) => {
 };
 
 
-
 const parseOCRPromptHead = `
 The following is the result of OCR on an image of a company vehicle. Parse the information in the vehicle into the following JSON format. !!IMPORTANT!! Only use information from the image. If a field is not represented in the ocr output, write a blank string (or empty list if its the industry field). !!ALSO IMPORTANT!! Formatting the output correctly is of utmost importance. Only return the raw JSON as your response. it should look like this:
 
@@ -156,7 +154,7 @@ const pgmq_public = createClient(
 );
 
 Deno.serve(async (req) => {
-    // Prevent infinite loops but shouldn't happen
+    // Max images processed per invocation
     const MAX_ITERS = 100;
     let iters = 0;
 
@@ -173,9 +171,7 @@ Deno.serve(async (req) => {
         }
 
         if (messages && messages.length > 0) {
-            // Create urls for each image in the store
             let signedUrlPromises = [];
-
             for (const message of messages) {
                 signedUrlPromises.push(
                     supabase.storage
@@ -192,7 +188,6 @@ Deno.serve(async (req) => {
 
             const signedUrls = await Promise.all(signedUrlPromises);
             let n = signedUrls.length;
-
             log(`Processing ${n} messages:`);
 
 
@@ -201,18 +196,14 @@ Deno.serve(async (req) => {
                     image: { source: { imageUri: signedUrl.signedUrl } },
                     features: [{ type: "TEXT_DETECTION" }],
             }));
-
             log("Cloud Vision Body: ", requests);
 
             const responses = await callVisionAPI(requests, VISION_API_URL, VISION_API_KEY);
             log("OCR Resuts: ", responses);
-
-
             if (!responses) {
                 throw new Error("Malformed response: no 'responses' field.");
             }
 
-           // Check for per-request errors
             responses.forEach((res, i) => {
                 if (res.error) {
                     log(`Error in OCR response #${i}:`, res.error);
@@ -236,7 +227,6 @@ Deno.serve(async (req) => {
 
 
             let LLMPromises = [];
-
             for (const request of LLMRequests) {
                 log("LLM body", request);
                 LLMPromises.push(
@@ -254,37 +244,27 @@ Deno.serve(async (req) => {
             const LLMResults = await Promise.all(LLMPromises);
             log("LLM Output: " + JSON.stringify(LLMResults));
             const parsedJSONs = await Promise.all(LLMResults.map(async (res, idx) => {
-                let attempts = 0;
-                let parsed, result;
-                do {
-                    parsed = JSON.parse(res.content[0].text);
-                    result = ParsedCompanyDataSchema.safeParse(parsed);
-                    if (result.success) {
-                        return parsed;
-                    }
-                    // If validation fails, recall the LLM (simulate by retrying the same request)
-                    log(`LLM output validation failed for message #${idx}, attempt ${attempts + 1}: ${result.error.message}`);
-                    // Optionally, you could re-call the LLM here with the same input if you want to actually retry
-                    attempts++;
-                } while (attempts < 2);
-                throw new Error(`LLM output validation failed after 2 attempts: ${result.error.message}`);
+                let parsed = JSON.parse(res.content[0].text);
+                let result = ParsedCompanyDataSchema.safeParse(parsed);
+                if (result.success) {
+                    return parsed;
+                }
+                log(`LLM output validation failed for message #${idx}: ${result.error.message}`);
+                throw new Error(`LLM output validation failed: ${result.error.message}`);
             }));
 
-            const companyJSONs = parsedJSONs.map((json) => ({
+            normalizedCleanedJSONs = parsedJSONs.map((json) => ( removeEmptyFields({
                 name: normalizeName(json.name),
                 industry: json.industry,
                 email: normalizeEmail(json.email),
                 phone: normalizePhone(json.phone),
                 city: json.city,
                 state: json.state
-            }));
+            })));
 
-            log("parsed company JSON: ", companyJSONs);
+            log("normalized/cleaned company JSON: ", normalizedCleanedJSONs); 
 
-            const cleanedJSONs = companyJSONs.map((c) => removeEmptyFields(c));
-            log("cleaned company JSON: ", cleanedJSONs); 
-
-            for (const company of cleanedJSONs) {
+            for (const company of normalizedCleanedJSONs) {
                 const result = await upsertCompany(supabase,  company);
                 if (!result.success) {
                     log("Error upserting company ",company?.name, ": ", result.error);
@@ -295,7 +275,6 @@ Deno.serve(async (req) => {
             
 
 
-          // If processing is successful, delete the message from the queue
             for (const message of messages) {
                 const { error: deleteError } = await pgmq_public.rpc('delete', {
                     queue_name: 'image-processing',
@@ -330,14 +309,3 @@ Deno.serve(async (req) => {
 });
 
 
-/* To invoke locally:
-
- 1. Run `supabase start` (see: https://supabase.com/docs/reference/cli/supabase-start)
- 2. Make an HTTP request:
-
- curl -i --location --request POST 'http://127.0.0.1:54321/functions/v1/worker' \
-  --header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0' \
-  --header 'Content-Type: application/json' \
-  --data '{"name":"Functions"}'
-
-*/
