@@ -3,7 +3,7 @@
 import { assertEquals, assert } from "https://deno.land/std@0.177.0/testing/asserts.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { Database } from '../_shared/database.types.ts';
-import { handler, normalizers, removeEmptyFields, upsertCompany, processOCRWithLLM } from "../worker/index.ts";
+import { handler, removeEmptyFields, upsertCompany, processOCRWithLLM } from "../worker/index.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -205,26 +205,6 @@ _test("LLM returns valid JSON with missing fields (fails validation)", async () 
 
 });
 
-_test("normalizers.name removes common company suffixes and normalizes", async () => {
-    assertEquals(normalizers.name("ACME Corp LLC"), "acme");
-    assertEquals(normalizers.name("Smith & Sons Inc."), "smith  sons");
-    assertEquals(normalizers.name("Johnson Co"), "johnson");
-    assertEquals(normalizers.name("Tech Solutions Ltd"), "tech solutions");
-    assertEquals(normalizers.name("  Global Corp  "), "global");
-});
-
-_test("normalizers.email converts to lowercase", async () => {
-    assertEquals(normalizers.email("INFO@EXAMPLE.COM"), "info@example.com");
-    assertEquals(normalizers.email("Test.User@Company.org"), "test.user@company.org");
-    assertEquals(normalizers.email("already.lower@test.com"), "already.lower@test.com");
-});
-
-_test("normalizers.phone extracts only digits", async () => {
-    assertEquals(normalizers.phone("(555) 123-4567"), "5551234567");
-    assertEquals(normalizers.phone("+1-800-CALL-NOW"), "1800");
-    assertEquals(normalizers.phone("555.123.4567 ext 123"), "5551234567123");
-    assertEquals(normalizers.phone("no digits here!"), "");
-});
 
 _test("removeEmptyFields removes empty strings and null values", async () => {
     const input = { 

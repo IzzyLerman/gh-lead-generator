@@ -81,17 +81,6 @@ export async function callLLMAPI(request: LLMAPIRequest, url: string, key: strin
   return response.json();
 }
 
-export const normalizers = {
-  name: (name: string): string => {
-    return name.toLowerCase() 
-      .normalize("NFKD")
-      .replace(/[^\w\s]/g, "")                        
-      .replace(/\b(?:inc|corp|llc|co|ltd|plc)\b/gi, "")
-      .trim();
-  },
-  email: (email: string): string => email.toLowerCase(),
-  phone: (phone: string): string => phone.replace(/\D/g, "")
-};
 
 
 
@@ -308,10 +297,10 @@ export async function processOCRWithLLM(ocrResponses: VisionAPIResponse[], llmAP
 
 function normalizeCompanyData(parsedData: ParsedCompanyData[]): CompanyUpsertData[] {
   return parsedData.map(json => removeEmptyFields({
-    name: normalizers.name(json.name),
+    name: json.name,
     industry: json.industry,
-    email: json.email ? normalizers.email(json.email) : undefined,
-    phone: json.phone ? normalizers.phone(json.phone) : undefined,
+    email: json.email,
+    phone: json.phone,
     city: json.city,
     state: json.state
   }) as CompanyUpsertData);
