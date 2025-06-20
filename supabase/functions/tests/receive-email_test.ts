@@ -11,6 +11,8 @@ function getTestEnvVar(key: string): string {
     return value;
 }
 
+// Test wrapper
+
 function _test(name: string, fn: (ReturnType<void>)) {
     Deno.test(name, async() => {
         try {
@@ -21,11 +23,6 @@ function _test(name: string, fn: (ReturnType<void>)) {
     });
 }
 
-const mockTriggerWorker = async () => {
-    console.log("[MOCK] triggerWorker call intercepted. Worker not triggered.");
-    return await Promise.resolve();
-};
-
 const SUPABASE_URL = getTestEnvVar("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = getTestEnvVar("SUPABASE_SERVICE_ROLE_KEY");
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -34,6 +31,10 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 function createMockFile(name: string, type: string, size: number): File {
     const buffer = new Uint8Array(size);
     return new File([buffer], name, { type });
+}
+
+async function mockEnqueue(pgmq_public, path){
+    return Promise.resolve();
 }
 
 _test("Valid PNG attachment is uploaded to bucket", async () => {
@@ -48,7 +49,7 @@ formData.append("attachment-1", file);
     
     let path: string | null = null;
     try {
-        const response = await handler(request, { triggerWorker: mockTriggerWorker });
+        const response = await handler(request, {enqueueImageJob: mockEnqueue});
         const json = await response.json();
         path = json.path;
 
@@ -82,7 +83,7 @@ _test("Valid JPG attachment is uploaded to bucket", async () => {
 
     let path: string | null = null;
     try {
-        const response = await handler(request, { triggerWorker: mockTriggerWorker });
+        const response = await handler(request, {enqueueImageJob: mockEnqueue});
         const json = await response.json();
         path = json.path;
 
@@ -111,7 +112,7 @@ _test("Filename with no extension is handled", async () => {
 
     let path: string | null = null;
     try {
-        const response = await handler(request, { triggerWorker: mockTriggerWorker });
+        const response = await handler(request, {enqueueImageJob: mockEnqueue});
         const json = await response.json();
         path = json.path;
 
@@ -137,7 +138,7 @@ _test("Request with no attachments is handled", async () => {
         body: formData,
     });
 
-    const response = await handler(request, { triggerWorker: mockTriggerWorker });
+    const response = await handler(request, {enqueueImageJob: mockEnqueue});
     const json = await response.json();
 
     assertEquals(response.status, 400);
@@ -154,7 +155,7 @@ _test("Request with invalid-type attachments (.txt) is handled", async () => {
         body: formData,
     });
 
-    const response = await handler(request, { triggerWorker: mockTriggerWorker });
+    const response = await handler(request, {enqueueImageJob: mockEnqueue});
     const json = await response.json();
 
     assertEquals(response.status, 500);
@@ -173,7 +174,7 @@ _test("File too large is handled", async () => {
         body: formData,
     });
 
-    const response = await handler(request, { triggerWorker: mockTriggerWorker });
+    const response = await handler(request, {enqueueImageJob: mockEnqueue});
     const json = await response.json();
 
     assertEquals(response.status, 500);

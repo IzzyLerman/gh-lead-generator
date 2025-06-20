@@ -11,3 +11,12 @@ CREATE TABLE companies (
  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+ALTER TABLE public.companies ENABLE ROW LEVEL SECURITY;
+
+create policy "block_all"
+on public.companies
+for ALL
+to public
+using (false)
+with check (false);

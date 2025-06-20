@@ -9,3 +9,12 @@ CREATE TABLE public."vehicle-photos" (
     ON DELETE SET NULL
 
 );
+
+ALTER TABLE public."vehicle-photos" ENABLE ROW LEVEL SECURITY;
+
+create policy "block_all"
+on "public"."vehicle-photos"
+for ALL
+to public
+using (false)
+with check (false);

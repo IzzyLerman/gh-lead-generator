@@ -16,7 +16,7 @@ function log(message: string, ...args: unknown[]) {
   console.log(`[worker] ${message}`, ...args);
 }
 
-async function callVisionAPI(imageRequests: any[], url: string, key: string) {
+export async function callVisionAPI(imageRequests: any[], url: string, key: string) {
   const response = await fetch(`${url}?key=${key}`,
     {
       method: "POST",
@@ -33,7 +33,7 @@ async function callVisionAPI(imageRequests: any[], url: string, key: string) {
   return json.responses;
 }
 
-async function callLLMAPI(request: any, url: string, key: string) {
+export async function callLLMAPI(request: any, url: string, key: string) {
   const response = await fetch(url, {
     method: 'POST',
     headers: {
@@ -118,194 +118,245 @@ const upsertCompany = async (supabase, company) => {
   }
 };
 
+export async function dequeueElement(pgmq_public: SupabaseClient, n: number) {
+    const { data: messages, error: readError } = await pgmq_public.rpc('read', {
+        queue_name: 'image-processing',
+        sleep_seconds: 15,
+        n: n + 1,
+    });
 
-const parseOCRPromptHead = `
-The following is the result of OCR on an image of a company vehicle. Parse the information in the vehicle into the following JSON format. !!IMPORTANT!! Only use information from the image. If a field is not represented in the ocr output, write a blank string (or empty list if its the industry field). !!ALSO IMPORTANT!! Formatting the output correctly is of utmost importance. Only return the raw JSON as your response. it should look like this:
+    if(readError)
+        throw(readError);
 
-{
-    name: <company name>,
-    industry: <array of industries as strings. examples are heating, cooling, ventilation, plumbing, fumigators, etc.>
-    email: <email, pick the first if there are more than one>
-    phone: <phone number, just pick the first one and only write the 10 digits NO dashes or parentheses>
-    city: <city>
-    state: <state>
-    website: <website>
+    let status;
+    if( messages.length === n ){
+      status = true;
+    }else{
+      messages.pop()
+      status = false;
+    }
+
+
+
+
+    return {data: messages, error: readError, qEmptyStatus: status };
+
 }
 
-<BEGIN OCR OUTPUT>\n
-`
-const parseOCRPromptFooter = `\n<END OCR OUTPUT>`;
-
-const SUPABASE_URL = getEnvVar('SUPABASE_URL');
-const SUPABASE_SERVICE_ROLE_KEY = getEnvVar('SUPABASE_SERVICE_ROLE_KEY');
-const ANTHROPIC_API_KEY = getEnvVar('ANTHROPIC_API_KEY');
-const ANTHROPIC_API_URL = getEnvVar('ANTHROPIC_API_URL');
-const VISION_API_URL = getEnvVar('VISION_API_URL');
-const VISION_API_KEY = getEnvVar('VISION_API_KEY');
-
-const supabase = createClient(
-  SUPABASE_URL,
-  SUPABASE_SERVICE_ROLE_KEY
-);
-const pgmq_public = createClient(
-  SUPABASE_URL,
-  SUPABASE_SERVICE_ROLE_KEY,
-  { db: { schema: 'pgmq_public' } }
-);
-
-Deno.serve(async (req) => {
-    // Max images processed per invocation
-    const MAX_ITERS = 100;
-    let iters = 0;
-
-    while(iters < MAX_ITERS){
-      try {
-        const { data: messages, error: readError } = await pgmq_public.rpc('read', {
-          queue_name: 'image-processing',
-          sleep_seconds: 15,
-          n: 5,
-        });
-
-        if (readError) {
-          throw readError;
+async function generateSignedUrls(supabase: SupabaseClient, messages) {
+    if (messages && messages.length > 0) {
+        let signedUrlPromises = [];
+        for (const message of messages) {
+            signedUrlPromises.push(
+                supabase.storage
+                   .from("gh-vehicle-photos")
+                   .createSignedUrl(message.message.image_path, 60)
+                   .then(({ data, error }) => {
+                     if (error) {
+                       throw new Error(`Failed to create signed URL for ${message.message.image_path}: ${error.message}`);
+                     }
+                     return { signedUrl: data.signedUrl, messageId: message.id };
+                   })
+            )
         }
 
-        if (messages && messages.length > 0) {
-            let signedUrlPromises = [];
-            for (const message of messages) {
-                signedUrlPromises.push(
-                    supabase.storage
-                       .from("gh-vehicle-photos")
-                       .createSignedUrl(message.message.image_path, 60)
-                       .then(({ data, error }) => {
-                         if (error) {
-                           throw new Error(`Failed to create signed URL for ${message.message.image_path}: ${error.message}`);
-                         }
-                         return { signedUrl: data.signedUrl, messageId: message.id };
-                       })
-                )
-            }
-
-            const signedUrls = await Promise.all(signedUrlPromises);
-            let n = signedUrls.length;
-            log(`Processing ${n} messages:`);
-
-
-            // OCR
-            const requests = signedUrls.map(( signedUrl ) => ({
-                    image: { source: { imageUri: signedUrl.signedUrl } },
-                    features: [{ type: "TEXT_DETECTION" }],
-            }));
-            log("Cloud Vision Body: ", requests);
-
-            const responses = await callVisionAPI(requests, VISION_API_URL, VISION_API_KEY);
-            log("OCR Resuts: ", responses);
-            if (!responses) {
-                throw new Error("Malformed response: no 'responses' field.");
-            }
-
-            responses.forEach((res, i) => {
-                if (res.error) {
-                    log(`Error in OCR response #${i}:`, res.error);
-                }   
-            });
-
-
-            
-            // LLM parses OCR
-            
-            const LLMRequests = responses.map((res, index) => ({
-                     model: "claude-3-5-haiku-20241022",
-                     max_tokens: 1024,
-                     messages: [
-                       {
-                         role: "user", 
-                         content: parseOCRPromptHead + res.textAnnotations[0].description + parseOCRPromptFooter
-                       }
-                     ]   
-                }));
-
-
-            let LLMPromises = [];
-            for (const request of LLMRequests) {
-                log("LLM body", request);
-                LLMPromises.push(
-                    callLLMAPI(request, ANTHROPIC_API_URL, ANTHROPIC_API_KEY)
-                    .then(response => {
-                        try {
-                            return response;
-                        } catch (error) {
-                            throw new Error(`LLM output validation failed: ${error.message}`);
-                        }
-                    })
-                )
-            }
-
-            const LLMResults = await Promise.all(LLMPromises);
-            log("LLM Output: " + JSON.stringify(LLMResults));
-            const parsedJSONs = await Promise.all(LLMResults.map(async (res, idx) => {
-                let parsed = JSON.parse(res.content[0].text);
-                let result = ParsedCompanyDataSchema.safeParse(parsed);
-                if (result.success) {
-                    return parsed;
-                }
-                log(`LLM output validation failed for message #${idx}: ${result.error.message}`);
-                throw new Error(`LLM output validation failed: ${result.error.message}`);
-            }));
-
-            normalizedCleanedJSONs = parsedJSONs.map((json) => ( removeEmptyFields({
-                name: normalizeName(json.name),
-                industry: json.industry,
-                email: normalizeEmail(json.email),
-                phone: normalizePhone(json.phone),
-                city: json.city,
-                state: json.state
-            })));
-
-            log("normalized/cleaned company JSON: ", normalizedCleanedJSONs); 
-
-            for (const company of normalizedCleanedJSONs) {
-                const result = await upsertCompany(supabase,  company);
-                if (!result.success) {
-                    log("Error upserting company ",company?.name, ": ", result.error);
-                }else{
-                    log("Successfully upserted ",company?.name);
-                }
-            }
-            
-
-
-            for (const message of messages) {
-                const { error: deleteError } = await pgmq_public.rpc('delete', {
-                    queue_name: 'image-processing',
-                    message_id: message.msg_id,
-                });
-                if (deleteError) {
-                    log('Error deleting message:', deleteError);
-                }
-          }
-          
-          iters += n;
-
-        } else {
-            const status = iters < 1 ? 'No new messages' : `Processed ${iters} messages`;
-            return new Response(JSON.stringify({ status: status }), {
-            headers: { 'Content-Type': 'application/json' },
-          });
-        }
-
-      } catch (error) {
-        return new Response(JSON.stringify({ error: error.message }), {
-          status: 500,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
+        const signedUrls = await Promise.all(signedUrlPromises);
+        let n = signedUrls.length;
+        log(`Processing ${n} messages:`);
+        return {urls: signedUrls, num: n};
+    } else {
+        return {urls: null, num: 0}
     }
+    
+}
+
+export async function triggerWorker(supabase: SupabaseClient) {
+    supabase.functions.invoke('worker', {
+        headers: {'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`}
+    })
+}
+
+export const handler = async (req, overrides?: {
+    dequeueElement?: typeof dequeueElement,
+    callVisionAPI?: typeof callVisionAPI,
+    callLLMAPI?: typeof callLLMAPI,
+    triggerWorker?: typeof triggerWorker
+}) => {
+    // Max images processed per invocation
+    const parseOCRPromptHead = `
+    The following is the result of OCR on an image of a company vehicle. Parse the information in the vehicle into the following JSON format. !!IMPORTANT!! Only use information from the image. If a field is not represented in the ocr output, write a blank string (or empty list if its the industry field). !!ALSO IMPORTANT!! Formatting the output correctly is of utmost importance. Only return the raw JSON as your response. it should look like this:
+
+    {
+        name: <company name>,
+        industry: <array of industries as strings. examples are heating, cooling, ventilation, plumbing, fumigators, etc.>
+        email: <email, pick the first if there are more than one>
+        phone: <phone number, just pick the first one and only write the 10 digits NO dashes or parentheses>
+        city: <city>
+        state: <state>
+        website: <website>
+    }
+
+    <BEGIN OCR OUTPUT>\n
+    `
+    const parseOCRPromptFooter = `\n<END OCR OUTPUT>`;
+
+    const SUPABASE_URL = getEnvVar('SUPABASE_URL');
+    const SUPABASE_SERVICE_ROLE_KEY = getEnvVar('SUPABASE_SERVICE_ROLE_KEY');
+    const ANTHROPIC_API_KEY = getEnvVar('ANTHROPIC_API_KEY');
+    const ANTHROPIC_API_URL = getEnvVar('ANTHROPIC_API_URL');
+    const VISION_API_URL = getEnvVar('VISION_API_URL');
+    const VISION_API_KEY = getEnvVar('VISION_API_KEY');
+
+    const supabase = createClient(
+      SUPABASE_URL,
+      SUPABASE_SERVICE_ROLE_KEY
+    );
+    const pgmq_public = createClient(
+      SUPABASE_URL,
+      SUPABASE_SERVICE_ROLE_KEY,
+      { db: { schema: 'pgmq_public' } }
+    );
+
+    // fallback to default if options not provided
+
+    const dequeue = overrides?.dequeueElement ?? dequeueElement;
+    const vision = overrides?.callVisionAPI ?? callVisionAPI;
+    const llm = overrides?.callLLMAPI ?? callLLMAPI;
+    const trigger = overrides?.triggerWorker ?? triggerWorker;
+
+    try {
+      
+      const {data: messages, error: readError, qEmptyStatus: empty} = await dequeue(pgmq_public, 5);
+
+      const {urls: signedUrls, num: n} = await generateSignedUrls(supabase, messages);
+
+      if (n == 0) {
+          return new Response(JSON.stringify({ 
+              'status': 'No new messages',
+              'headers': { 'Content-Type': 'application/json'}
+          }));
+      }
+
+      // OCR
+      const requests = signedUrls.map(( signedUrl ) => ({
+              image: { source: { imageUri: signedUrl.signedUrl } },
+              features: [{ type: "TEXT_DETECTION" }],
+      }));
+
+      log("Cloud Vision Body: ", requests);
+
+      const responses = await vision(requests, VISION_API_URL, VISION_API_KEY);
+      log("OCR Resuts: ", responses);
+      if (!responses) {
+          throw new Error("Malformed response: no 'responses' field.");
+      }
+
+      responses.forEach((res, i) => {
+          if (res.error) {
+              log(`Error in OCR response #${i}:`, res.error);
+          }   
+      });
+      
+      // LLM parses OCR
+      
+      const LLMRequests = responses.map((res, index) => ({
+               model: "claude-3-5-haiku-20241022",
+               max_tokens: 1024,
+               messages: [
+                 {
+                   role: "user", 
+                   content: parseOCRPromptHead + res.textAnnotations[0].description + parseOCRPromptFooter
+                 }
+               ]   
+          }));
+
+
+      let LLMPromises = [];
+      for (const request of LLMRequests) {
+          log("LLM body", request);
+          LLMPromises.push(
+              llm(request, ANTHROPIC_API_URL, ANTHROPIC_API_KEY)
+              .then(response => {
+                  try {
+                      return response;
+                  } catch (error) {
+                      throw new Error(`LLM output validation failed: ${error.message}`);
+                  }
+              })
+          )
+      }
+
+      const LLMResults = await Promise.all(LLMPromises);
+      log("LLM Output: " + JSON.stringify(LLMResults));
+      const parsedJSONs = await Promise.all(LLMResults.map(async (res, idx) => {
+          let parsed = JSON.parse(res.content[0].text);
+          let result = ParsedCompanyDataSchema.safeParse(parsed);
+          if (result.success) {
+              return parsed;
+          }
+          log(`LLM output validation failed for message #${idx}: ${result.error.message}`);
+          throw new Error(`LLM output validation failed: ${result.error.message}`);
+      }));
+
+      normalizedCleanedJSONs = parsedJSONs.map((json) => ( removeEmptyFields({
+          name: normalizeName(json.name),
+          industry: json.industry,
+          email: normalizeEmail(json.email),
+          phone: normalizePhone(json.phone),
+          city: json.city,
+          state: json.state
+      })));
+
+      log("normalized/cleaned company JSON: ", normalizedCleanedJSONs); 
+
+      for (const company of normalizedCleanedJSONs) {
+          const result = await upsertCompany(supabase,  company);
+          if (!result.success) {
+              log("Error upserting company ",company?.name, ": ", result.error);
+          }else{
+              log("Successfully upserted ",company?.name);
+          }
+      }
+      
+
+
+      for (const message of messages) {
+          const { error: deleteError } = await pgmq_public.rpc('delete', {
+              queue_name: 'image-processing',
+              message_id: message.msg_id,
+          });
+          if (deleteError) {
+              log('Error deleting message:', deleteError);
+              throw(deleteError)
+          }
+        }
+      if( empty ) {
+        trigger(supabase).catch(log('Downstream error in recursive trigger'));
+      }
+      // Ensure fetch completes since we don't await
+      // I'm bad at async
+      await new Promise( resolve => setTimeout(resolve, 500)); 
+
+
+        
+
+
+    } catch (error) {
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    } 
     return new Response(JSON.stringify({ status: `Processed ${iters} images` }), {
             headers: { 'Content-Type': 'application/json' },
     });
 
 
-});
+};
+
+if (typeof Deno === 'undefined' || !Deno.test) {
+    // @ts-ignore: Deno.serve is available in the Supabase Edge Runtime
+  Deno.serve(handler);
+}
 
 

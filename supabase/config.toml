@@ -1,6 +1,10 @@
 
 [api]
-schemas = ["public", "pgmq_public"]
+schemas = ["public",  "pgmq_public"]
+
+[db.vault]
+worker_url = "env(WORKER_URL)"
+supabase_service_role_key = "env(SUPABASE_SERVICE_ROLE_KEY)"
 
 [functions.receive-email]
 enabled = true

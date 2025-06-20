@@ -1,5 +1,5 @@
 /*
- * Receives an HTTP POST from cloud email service containing (max) attachments, uploads them to the bucket, and triggers the worker function
+ * Receives an HTTP POST from cloud email service containing (max) attachments, uploads them to the bucket, and enqueues a message for the worker
 * */
 
 
@@ -46,12 +46,12 @@ async function uploadFileToStorage(supabase: any, file: File, filename: string) 
   return data;
 }
 
-async function enqueueImageJob(pgmq_public: any, imagePath: string) {
-  const { error } = await pgmq_public.rpc("send", {
+export async function enqueueImageJob(pgmq_public: any, imagePath: string) {
+  const { result } = await pgmq_public.rpc("send", {
     queue_name: "image-processing",
     message: { image_path: imagePath },
   });
-  if (error) throw error;
+  return result;
 }
 
 
@@ -64,11 +64,13 @@ export async function triggerWorker(supabase: any) {
 
 export const handler = async (
     req: Request,
-    options: { triggerWorker?: typeof triggerWorker } = {}
+    options?: {
+        enqueueImageJob?: typeof enqueueImageJob
+    }
 ) => {
 
-  // Use the injected triggerWorker for tests, or the real one in production
-  const triggerWorkerFn = options.triggerWorker || triggerWorker;
+  const enqueue = options?.enqueueImageJob ?? enqueueImageJob
+
 
   const SUPABASE_SERVICE_ROLE_KEY = getEnvVar("SUPABASE_SERVICE_ROLE_KEY");
   const SUPABASE_URL = getEnvVar("SUPABASE_URL");
@@ -107,12 +109,8 @@ export const handler = async (
     const uploadData = await uploadFileToStorage(supabase, file, filename);
     log(`File uploaded: ${uploadData.path}`);
 
-    await enqueueImageJob(pgmq_public, uploadData.path);
-    log(`Job enqueued for image: ${uploadData.path}`);
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-
-    triggerWorkerFn(supabase);
-    log(`Worker triggered`);
+    await enqueue(pgmq_public, uploadData.path);
+    log(`Job enqueued for image: ${uploadData.path} `);
 
     return new Response(JSON.stringify({ success: true, path: uploadData.path }), {
       headers: { "Content-Type": "application/json" },
