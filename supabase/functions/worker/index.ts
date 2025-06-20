@@ -122,28 +122,17 @@ export async function dequeueElement(pgmq_public: SupabaseClient, n: number) {
     const { data: messages, error: readError } = await pgmq_public.rpc('read', {
         queue_name: 'image-processing',
         sleep_seconds: 15,
-        n: n + 1,
+        n: n,
     });
 
     if(readError)
         throw(readError);
 
-    let status;
-    if( messages.length === n ){
-      status = true;
-    }else{
-      messages.pop()
-      status = false;
-    }
-
-
-
-
-    return {data: messages, error: readError, qEmptyStatus: status };
+    return {data: messages, error: readError};
 
 }
 
-async function generateSignedUrls(supabase: SupabaseClient, messages) {
+export async function generateSignedUrls(supabase: SupabaseClient, messages) {
     if (messages && messages.length > 0) {
         let signedUrlPromises = [];
         for (const message of messages) {
@@ -170,6 +159,30 @@ async function generateSignedUrls(supabase: SupabaseClient, messages) {
     
 }
 
+async function deleteMessage(pgmq_public, message) {
+    const { error: deleteError } = await pgmq_public.rpc('delete', {
+        queue_name: 'image-processing',
+        message_id: message.msg_id,
+    });
+    if (deleteError) {
+        log('Error deleting message:', deleteError);
+        throw(deleteError)
+    }
+}
+
+async function archiveMessage(pgmq_public, message) {
+    log(`Fatal error processing image. Archiving message with image_path: ${message.message.image_path}`);
+    const { error: deleteError } = await pgmq_public.rpc('archive', {
+        queue_name: 'image-processing',
+        message_id: message.msg_id,
+    });
+    if (deleteError) {
+        log('Error archiving message:', deleteError);
+        throw(deleteError)
+    }
+}
+
+
 export async function triggerWorker(supabase: SupabaseClient) {
     supabase.functions.invoke('worker', {
         headers: {'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`}
@@ -180,7 +193,7 @@ export const handler = async (req, overrides?: {
     dequeueElement?: typeof dequeueElement,
     callVisionAPI?: typeof callVisionAPI,
     callLLMAPI?: typeof callLLMAPI,
-    triggerWorker?: typeof triggerWorker
+    generateSignedUrls?: typeof generateSignedUrls
 }) => {
     // Max images processed per invocation
     const parseOCRPromptHead = `
@@ -207,33 +220,39 @@ export const handler = async (req, overrides?: {
     const VISION_API_URL = getEnvVar('VISION_API_URL');
     const VISION_API_KEY = getEnvVar('VISION_API_KEY');
 
-    const supabase = createClient(
-      SUPABASE_URL,
-      SUPABASE_SERVICE_ROLE_KEY
-    );
-    const pgmq_public = createClient(
-      SUPABASE_URL,
-      SUPABASE_SERVICE_ROLE_KEY,
-      { db: { schema: 'pgmq_public' } }
-    );
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false
+  }
+});
+
+    const pgmq_public = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  db: { schema: "pgmq_public" },
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false
+  }
+});
 
     // fallback to default if options not provided
 
     const dequeue = overrides?.dequeueElement ?? dequeueElement;
     const vision = overrides?.callVisionAPI ?? callVisionAPI;
     const llm = overrides?.callLLMAPI ?? callLLMAPI;
-    const trigger = overrides?.triggerWorker ?? triggerWorker;
+    const url = overrides?.generateSignedUrls ?? generateSignedUrls;
 
     try {
       
       const {data: messages, error: readError, qEmptyStatus: empty} = await dequeue(pgmq_public, 5);
 
-      const {urls: signedUrls, num: n} = await generateSignedUrls(supabase, messages);
+      const {urls: signedUrls, num: n} = await url(supabase, messages);
 
       if (n == 0) {
           return new Response(JSON.stringify({ 
-              'status': 'No new messages',
-              'headers': { 'Content-Type': 'application/json'}
+              'status': 200,
+              'headers': { 'Content-Type': 'application/json'},
+              'message': 'No new messages'
           }));
       }
 
@@ -289,6 +308,9 @@ export const handler = async (req, overrides?: {
       const LLMResults = await Promise.all(LLMPromises);
       log("LLM Output: " + JSON.stringify(LLMResults));
       const parsedJSONs = await Promise.all(LLMResults.map(async (res, idx) => {
+          if(!res.content || !res.content[0] || !res.content[0].text) {
+              throw new Error("Malformed LLM Response");
+          }
           let parsed = JSON.parse(res.content[0].text);
           let result = ParsedCompanyDataSchema.safeParse(parsed);
           if (result.success) {
@@ -309,48 +331,36 @@ export const handler = async (req, overrides?: {
 
       log("normalized/cleaned company JSON: ", normalizedCleanedJSONs); 
 
-      for (const company of normalizedCleanedJSONs) {
-          const result = await upsertCompany(supabase,  company);
+      normalizedCleanedJSONs.forEach(async (c, idx) => {
+          const result = await upsertCompany(supabase,  c);
           if (!result.success) {
-              log("Error upserting company ",company?.name, ": ", result.error);
+              log("Error upserting company ",c.name, ": ", result.error);
+              archiveMessage(pgmq_public, messages[idx]);
           }else{
-              log("Successfully upserted ",company?.name);
+              log("Successfully upserted ",c.name);
+              deleteMessage(pgmq_public, messages[idx]);
           }
-      }
-      
-
-
-      for (const message of messages) {
-          const { error: deleteError } = await pgmq_public.rpc('delete', {
-              queue_name: 'image-processing',
-              message_id: message.msg_id,
-          });
-          if (deleteError) {
-              log('Error deleting message:', deleteError);
-              throw(deleteError)
-          }
-        }
-      if( empty ) {
-        trigger(supabase).catch(log('Downstream error in recursive trigger'));
-      }
-      // Ensure fetch completes since we don't await
-      // I'm bad at async
-      await new Promise( resolve => setTimeout(resolve, 500)); 
-
-
-        
+      });
 
 
     } catch (error) {
-      return new Response(JSON.stringify({ error: error.message }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return new Response(
+        JSON.stringify({ error: error.message }),
+        {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
     } 
-    return new Response(JSON.stringify({ status: `Processed ${iters} images` }), {
-            headers: { 'Content-Type': 'application/json' },
-    });
 
+    return new Response(
+      JSON.stringify({ message: `Processed ${iters} images`,}),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
+    
 
 };
 

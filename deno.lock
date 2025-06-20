@@ -1,11 +1,22 @@
 {
   "version": "5",
   "specifiers": {
+    "jsr:@std/assert@1": "1.0.13",
+    "jsr:@std/internal@^1.0.6": "1.0.8",
     "jsr:@supabase/functions-js@*": "2.4.4",
     "npm:@supabase/supabase-js@^2.50.0": "2.50.0",
     "npm:deno@^2.3.6": "2.3.6"
   },
   "jsr": {
+    "@std/assert@1.0.13": {
+      "integrity": "ae0d31e41919b12c656c742b22522c32fb26ed0cba32975cb0de2a273cb68b29",
+      "dependencies": [
+        "jsr:@std/internal"
+      ]
+    },
+    "@std/internal@1.0.8": {
+      "integrity": "fc66e846d8d38a47cffd274d80d2ca3f0de71040f855783724bb6b87f60891f5"
+    },
     "@supabase/functions-js@2.4.4": {
       "integrity": "38456509a6e22fb116b118464cbb36357256f9048d3580632b63af91f63769f7"
     }
@@ -148,7 +159,8 @@
     "https://esm.sh/utf-8-validate@%3E=5.0.2?target=denonext": "https://esm.sh/utf-8-validate@6.0.5?target=denonext",
     "https://esm.sh/webidl-conversions@^3.0.0?target=denonext": "https://esm.sh/webidl-conversions@3.0.1?target=denonext",
     "https://esm.sh/whatwg-url@^5.0.0?target=denonext": "https://esm.sh/whatwg-url@5.0.0?target=denonext",
-    "https://esm.sh/ws@^8.18.2?target=denonext": "https://esm.sh/ws@8.18.2?target=denonext"
+    "https://esm.sh/ws@^8.18.2?target=denonext": "https://esm.sh/ws@8.18.2?target=denonext",
+    "https://esm.sh/zod": "https://esm.sh/zod@3.25.67"
   },
   "remote": {
     "https://deno.land/std@0.177.0/async/abortable.ts": "73acfb3ed7261ce0d930dbe89e43db8d34e017b063cf0eaa7d215477bf53442e",
@@ -192,7 +204,9 @@
     "https://esm.sh/whatwg-url@5.0.0/denonext/whatwg-url.mjs": "29b16d74ee72624c915745bbd25b617cfd2248c6af0f5120d131e232a9a9af79",
     "https://esm.sh/whatwg-url@5.0.0?target=denonext": "f001a2cadf81312d214ca330033f474e74d81a003e21e8c5d70a1f46dc97b02d",
     "https://esm.sh/ws@8.18.2/denonext/ws.mjs": "b9211ecb1511b09f418c1330920c66800b66710b2cd2997b64b7e0525bd895d2",
-    "https://esm.sh/ws@8.18.2?target=denonext": "2ee7b1bb11543dda3e7e1c685ad8599b6f18aea785302374c3def5da468a1e51"
+    "https://esm.sh/ws@8.18.2?target=denonext": "2ee7b1bb11543dda3e7e1c685ad8599b6f18aea785302374c3def5da468a1e51",
+    "https://esm.sh/zod@3.25.67": "7b70259ec8ba5d5a51852222b1eb6a2ab74126dfa8da7d0d75007a937a7118ac",
+    "https://esm.sh/zod@3.25.67/denonext/zod.mjs": "a98934146e48c30c7e5f521f9ab9679d1d1cfa5649e82773470c80fd80743adb"
   },
   "workspace": {
     "packageJson": {
