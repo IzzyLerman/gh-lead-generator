@@ -4,7 +4,8 @@
 
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { Database } from './../_shared/database.types.ts'
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 
 function getEnvVar(key: string): string {
@@ -35,7 +36,7 @@ function generateUniqueFilename(originalName: string): string {
   return `uploads/vehicle_${crypto.randomUUID()}.${ext}`;
 }
 
-async function uploadFileToStorage(supabase: any, file: File, filename: string) {
+async function uploadFileToStorage(supabase: SupabaseClient<Database>, file: File, filename: string) {
   const { data, error } = await supabase.storage
     .from("gh-vehicle-photos")
     .upload(filename, file, {
@@ -46,16 +47,16 @@ async function uploadFileToStorage(supabase: any, file: File, filename: string) 
   return data;
 }
 
-export async function enqueueImageJob(pgmq_public: any, imagePath: string) {
-  const { result } = await pgmq_public.rpc("send", {
+export async function enqueueImageJob(pgmq_public: SupabaseClient<Database, 'pgmq_public'>, imagePath: string) {
+  const { data } = await pgmq_public.rpc("send", {
     queue_name: "image-processing",
     message: { image_path: imagePath },
   });
-  return result;
+  return data;
 }
 
 
-export async function triggerWorker(supabase: any) {
+export async function triggerWorker(supabase: SupabaseClient<Database>) {
     const { data, error} = await supabase.functions.invoke('worker', {body: {}})
     if (error) {
     throw new Error(`Failed to trigger worker: ${error.message}`);
@@ -76,14 +77,14 @@ export const handler = async (
   const SUPABASE_URL = getEnvVar("SUPABASE_URL");
   const WORKER_URL = getEnvVar("WORKER_URL");
 
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: {
     autoRefreshToken: false,
     persistSession: false
   }
 });
 
-  const pgmq_public = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  const pgmq_public = createClient<Database, 'pgmq_public'>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   db: { schema: "pgmq_public" },
   auth: {
     autoRefreshToken: false,
@@ -97,28 +98,47 @@ export const handler = async (
   }
   try {
     const formData = await req.formData();
-    const file = formData.get("attachment-1");
-    if (!file || !(file instanceof File)) {
-      log("No attachment found");
-      return new Response(JSON.stringify({ error: "No attachment found" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    
+    const attachments: File[] = [];
+    for (let i = 1; i <= 5; i++) {
+      const file = formData.get(`attachment-${i}`);
+      if (file && file instanceof File) {
+        attachments.push(file);
+      }
     }
 
-    validateFile(file);
-    const filename = generateUniqueFilename(file.name);
-    log(`Uploading file as ${filename}`);
-    const uploadData = await uploadFileToStorage(supabase, file, filename);
-    log(`File uploaded: ${uploadData.path}`);
+    if (attachments.length === 0) {
+      log("No attachments found");
+      return new Response(JSON.stringify({ error: "No attachments found" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
 
-    await enqueue(pgmq_public, uploadData.path);
-    log(`Job enqueued for image: ${uploadData.path} `);
+    if (attachments.length > 5) {
+      log(`Too many attachments: ${attachments.length}`);
+      return new Response(JSON.stringify({ error: "Maximum 5 attachments allowed" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
 
-    return new Response(JSON.stringify({ success: true, path: uploadData.path }), {
+    const uploadedPaths: string[] = [];
+    
+    for (const file of attachments) {
+      validateFile(file);
+      const filename = generateUniqueFilename(file.name);
+      log(`Uploading file as ${filename}`);
+      const uploadData = await uploadFileToStorage(supabase, file, filename);
+      log(`File uploaded: ${uploadData.path}`);
+      uploadedPaths.push(uploadData.path);
+      
+      await enqueue(pgmq_public, uploadData.path);
+      log(`Job enqueued for image: ${uploadData.path} `);
+    }
+
+    return new Response(JSON.stringify({ success: true, paths: uploadedPaths, count: attachments.length }), {
       headers: { "Content-Type": "application/json" },
       status: 200,
     });
   } catch (error) {
-    log(`Error: ${error.message || error}`);
-    return new Response(JSON.stringify({ error: error.message || String(error) }), {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log(`Error: ${errorMessage}`);
+    return new Response(JSON.stringify({ error: errorMessage }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
     });
