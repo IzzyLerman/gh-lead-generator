@@ -34,14 +34,26 @@ function createMockFile(name: string, type: string, size: number): File {
     return new File([buffer], name, { type });
 }
 
-async function mockEnqueue(pgmq_public: SupabaseClient<Database, 'pgmq_public'>, path: string): Promise<number[] | null> {
+async function mockEnqueue(pgmq_public: SupabaseClient<Database, 'pgmq_public'>, path: string): Promise<number[]> {
     return Promise.resolve([1]);
+}
+
+async function mockExtractVideoFrame(videoFile: File): Promise<File> {
+    // Create a mock JPG frame - just a simple buffer to simulate extracted frame
+    const mockFrameData = new Uint8Array(1024); // 1KB mock JPG data
+    // Add some fake JPG header bytes to make it look like a JPG
+    mockFrameData[0] = 0xFF;
+    mockFrameData[1] = 0xD8;
+    mockFrameData[2] = 0xFF;
+    
+    const filename = videoFile.name.replace(/\.mp4$/i, '_frame.jpg');
+    return new File([mockFrameData], filename, { type: 'image/jpeg' });
 }
 
 _test("Valid PNG attachment is uploaded to bucket", async () => {
     const file = createMockFile("test-image.png", "image/png", 1 * 1024 * 1024); // 1MB
     const formData = new FormData();
-formData.append("attachment-1", file);
+formData.append("attachments[]", file);
 
     const request = new Request("https://fake-url.com/receive-email", {
         method: "POST",
@@ -77,7 +89,7 @@ formData.append("attachment-1", file);
 _test("Valid JPG attachment is uploaded to bucket", async () => {
     const file = createMockFile("test-image.jpg", "image/jpeg", 2 * 1024 * 1024); // 2MB
     const formData = new FormData();
-    formData.append("attachment-1", file);
+    formData.append("attachments[]", file);
 
     const request = new Request("https://fake-url.com/receive-email", {
         method: "POST",
@@ -108,7 +120,7 @@ _test("Valid JPG attachment is uploaded to bucket", async () => {
 _test("Filename with no extension is handled", async () => {
     const file = createMockFile("image-no-ext", "image/png", 1024); // 1KB
     const formData = new FormData();
-    formData.append("attachment-1", file);
+    formData.append("attachments[]", file);
 
     const request = new Request("https://fake-url.com/receive-email", {
         method: "POST",
@@ -155,7 +167,7 @@ _test("Request with no attachments is handled", async () => {
 _test("Request with invalid-type attachments (.txt) is handled", async () => {
     const file = createMockFile("document.txt", "text/plain", 1024);
     const formData = new FormData();
-    formData.append("attachment-1", file);
+    formData.append("attachments[]", file);
 
     const request = new Request("https://fake-url.com/receive-email", {
         method: "POST",
@@ -170,11 +182,11 @@ _test("Request with invalid-type attachments (.txt) is handled", async () => {
 });
 
 _test("File too large is handled", async () => {
-    const maxSize = 10 * 1024 * 1024;
+    const maxSize = 50 * 1024 * 1024;
     const oversize = maxSize + 1;
     const file = createMockFile("oversized-image.png", "image/png", oversize);
     const formData = new FormData();
-    formData.append("attachment-1", file);
+    formData.append("attachments[]", file);
 
     const request = new Request("https://fake-url.com/receive-email", {
         method: "POST",
@@ -192,9 +204,9 @@ _test("Request with 5 attachments is processed correctly", async () => {
     const formData = new FormData();
     const paths: string[] = [];
     
-    for (let i = 1; i <= 5; i++) {
-        const file = createMockFile(`test-image-${i}.png`, "image/png", 1024 * i);
-        formData.append(`attachment-${i}`, file);
+    for (let i = 0; i < 5; i++) {
+        const file = createMockFile(`test-image-${i}.png`, "image/png", 1024 * (i + 1));
+        formData.append("attachments[]", file);
     }
 
     const request = new Request("https://fake-url.com/receive-email", {
@@ -232,9 +244,9 @@ _test("Request with 6 attachments processes only first 5", async () => {
     const formData = new FormData();
     const paths: string[] = [];
     
-    for (let i = 1; i <= 6; i++) {
-        const file = createMockFile(`test-image-${i}.png`, "image/png", 1024 * i);
-        formData.append(`attachment-${i}`, file);
+    for (let i = 0; i < 6; i++) {
+        const file = createMockFile(`test-image-${i}.png`, "image/png", 1024 * (i + 1));
+        formData.append("attachments[]", file);
     }
 
     const request = new Request("https://fake-url.com/receive-email", {
@@ -263,6 +275,87 @@ _test("Request with 6 attachments processes only first 5", async () => {
         }
     } finally {
         if (paths.length > 0) {
+            await supabase.storage.from("gh-vehicle-photos").remove(paths);
+        }
+    }
+});
+
+_test("HEIC attachment is converted to JPG and uploaded", async () => {
+    const heicData = await Deno.readFile("./supabase/functions/tests/img/ex.heic");
+    const file = new File([heicData], "ex.heic", { type: "image/heic" });
+    const formData = new FormData();
+    formData.append("attachments[]", file);
+
+    const request = new Request("https://fake-url.com/receive-email", {
+        method: "POST",
+        body: formData,
+    });
+
+    let paths: string[] = [];
+    try {
+        const response = await handler(request, {enqueueImageJob: mockEnqueue});
+        const json = await response.json();
+        paths = json.paths || [];
+
+        assertEquals(response.status, 200);
+        assertEquals(json.success, true);
+        assertEquals(json.count, 1);
+        assertEquals(json.paths.length, 1);
+        assert(paths[0] && paths[0].startsWith("uploads/vehicle_"), "Path should start with the correct prefix");
+        assert(paths[0].includes(".jpg"), "Converted file should have .jpg extension");
+
+        const { data: fileData, error: downloadError } = await supabase.storage
+            .from("gh-vehicle-photos")
+            .download(paths[0]);
+        
+        assert(downloadError === null, "Converted file should be downloadable from storage");
+        assert(fileData !== null, "File data should not be null");
+        // Note: The converted file size will be different from original due to HEIC->JPG conversion
+    } finally {
+        if (paths && paths.length > 0) {
+            await supabase.storage.from("gh-vehicle-photos").remove(paths);
+        }
+    }
+});
+
+
+_test("MP4 video frame extraction works correctly", async () => {
+    const mp4Data = await Deno.readFile("./supabase/functions/tests/img/big_buck_bunny.mp4");
+    const file = new File([mp4Data], "big_buck_bunny.mp4", { type: "video/mp4" });
+    const formData = new FormData();
+    formData.append("attachments[]", file);
+
+    const request = new Request("https://fake-url.com/receive-email", {
+        method: "POST",
+        body: formData,
+    });
+
+    let paths: string[] = [];
+    try {
+        const response = await handler(request, {
+            enqueueImageJob: mockEnqueue,
+            extractVideoFrame: mockExtractVideoFrame
+        });
+        const json = await response.json();
+        paths = json.paths || [];
+
+        assertEquals(response.status, 200);
+        assertEquals(json.success, true);
+        assertEquals(json.count, 1);
+        assertEquals(json.paths.length, 1);
+        assert(paths[0] && paths[0].startsWith("uploads/vehicle_"), "Path should start with the correct prefix");
+        assert(paths[0].includes(".jpg"), "Extracted frame should have .jpg extension");
+
+        const { data: fileData, error: downloadError } = await supabase.storage
+            .from("gh-vehicle-photos")
+            .download(paths[0]);
+        
+        assert(downloadError === null, "Extracted frame should be downloadable from storage");
+        assert(fileData !== null, "File data should not be null");
+        assert(fileData.size > 0, "Extracted frame should have content");
+        
+    } finally {
+        if (paths && paths.length > 0) {
             await supabase.storage.from("gh-vehicle-photos").remove(paths);
         }
     }

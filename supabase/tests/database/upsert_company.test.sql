@@ -4,7 +4,7 @@ SELECT plan(16);
 
 -- Test 1: Insert new company with all fields
 SELECT lives_ok(
-    $$ SELECT upsert_company('Test Company Inc', 'test@example.com', '555-123-4567', ARRAY['Technology', 'Software'], 'San Francisco', 'CA') $$,
+    $$ SELECT private.upsert_company('Test Company Inc', 'test@example.com', '555-123-4567', ARRAY['Technology', 'Software'], 'San Francisco', 'CA') $$,
     'Should insert new company successfully'
 );
 
@@ -17,12 +17,12 @@ SELECT is(
 
 -- Test 3: Verify normalized company name matching
 SELECT lives_ok(
-    $$ SELECT upsert_company('TEST COMPANY INC.', 'another@example.com', '555-987-6543', ARRAY['Tech'], 'Oakland', 'CA') $$,
+    $$ SELECT private.upsert_company('TEST COMPANY INC.', 'another@example.com', '555-987-6543', ARRAY['Tech'], 'Oakland', 'CA') $$,
     'Should match existing company by normalized name'
 );
 
 SELECT is(
-    (SELECT COUNT(*) FROM companies WHERE normalize_company_name(name) = normalize_company_name('Test Company Inc')),
+    (SELECT COUNT(*) FROM companies WHERE private.normalize_company_name(name) = private.normalize_company_name('Test Company Inc')),
     1::bigint,
     'Should update existing company, not create duplicate'
 );
@@ -35,7 +35,7 @@ SELECT ok(
 
 -- Test 5: Insert company with minimal data
 SELECT lives_ok(
-    $$ SELECT upsert_company('Minimal Co', NULL, NULL, NULL, NULL, NULL) $$,
+    $$ SELECT private.upsert_company('Minimal Co', NULL, NULL, NULL, NULL, NULL) $$,
     'Should insert company with minimal data'
 );
 
@@ -43,7 +43,7 @@ SELECT lives_ok(
 INSERT INTO companies (name, primary_email, email) VALUES ('Different Name', 'unique@test.com', ARRAY['unique@test.com']);
 
 SELECT lives_ok(
-    $$ SELECT upsert_company('Another Name', 'unique@test.com', '123-456-7890', ARRAY['Finance'], 'NYC', 'NY') $$,
+    $$ SELECT private.upsert_company('Another Name', 'unique@test.com', '123-456-7890', ARRAY['Finance'], 'NYC', 'NY') $$,
     'Should match existing company by email'
 );
 
@@ -57,7 +57,7 @@ SELECT is(
 INSERT INTO companies (name, primary_phone, phone) VALUES ('Phone Company', '555-000-1111', ARRAY['555-000-1111']);
 
 SELECT lives_ok(
-    $$ SELECT upsert_company('Phone Match Test', 'newphone@test.com', '(555) 000-1111', ARRAY['Telecom'], 'Boston', 'MA') $$,
+    $$ SELECT private.upsert_company('Phone Match Test', 'newphone@test.com', '(555) 000-1111', ARRAY['Telecom'], 'Boston', 'MA') $$,
     'Should match existing company by normalized phone'
 );
 
@@ -69,7 +69,7 @@ SELECT is(
 
 -- Test 8: Test industry array merging
 SELECT lives_ok(
-    $$ SELECT upsert_company('Test Company Inc', 'test3@example.com', '555-111-2222', ARRAY['Consulting', 'Technology'], 'LA', 'CA') $$,
+    $$ SELECT private.upsert_company('Test Company Inc', 'test3@example.com', '555-111-2222', ARRAY['Consulting', 'Technology'], 'LA', 'CA') $$,
     'Should merge industry arrays'
 );
 
@@ -85,19 +85,19 @@ SELECT ok(
 
 -- Test 9: Test normalization functions
 SELECT is(
-    normalize_company_name('Test Corp Inc.'),
-    normalize_company_name('TEST CORP INC'),
+    private.normalize_company_name('Test Corp Inc.'),
+    private.normalize_company_name('TEST CORP INC'),
     'Company name normalization should be case-insensitive and remove suffixes'
 );
 
 SELECT is(
-    normalize_email('TEST@EXAMPLE.COM  '),
+    private.normalize_email('TEST@EXAMPLE.COM  '),
     'test@example.com',
     'Email normalization should lowercase and trim'
 );
 
 SELECT is(
-    normalize_phone('(555) 123-4567'),
+    private.normalize_phone('(555) 123-4567'),
     '5551234567',
     'Phone normalization should remove all non-digits'
 );

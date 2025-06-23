@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION public.normalize_company_name(name_input TEXT)
+CREATE OR REPLACE FUNCTION private.normalize_company_name(name_input TEXT)
 RETURNS TEXT AS $$
 BEGIN
     RETURN LOWER(
@@ -13,23 +13,23 @@ BEGIN
         )
     );
 END;
-$$ LANGUAGE plpgsql IMMUTABLE SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql IMMUTABLE SECURITY DEFINER SET search_path = private;
 
-CREATE OR REPLACE FUNCTION public.normalize_email(email_input TEXT)
+CREATE OR REPLACE FUNCTION private.normalize_email(email_input TEXT)
 RETURNS TEXT AS $$
 BEGIN
     RETURN LOWER(TRIM(email_input));
 END;
-$$ LANGUAGE plpgsql IMMUTABLE SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql IMMUTABLE SECURITY DEFINER SET search_path = private;
 
-CREATE OR REPLACE FUNCTION public.normalize_phone(phone_input TEXT)
+CREATE OR REPLACE FUNCTION private.normalize_phone(phone_input TEXT)
 RETURNS TEXT AS $$
 BEGIN
     RETURN REGEXP_REPLACE(phone_input, '\D', '', 'g');
 END;
-$$ LANGUAGE plpgsql IMMUTABLE SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql IMMUTABLE SECURITY DEFINER SET search_path = private;
 
-CREATE OR REPLACE FUNCTION public.upsert_company(p_name TEXT, p_email TEXT, p_phone TEXT, p_industry TEXT[], p_city TEXT, p_state TEXT)
+CREATE OR REPLACE FUNCTION private.upsert_company(p_name TEXT, p_email TEXT, p_phone TEXT, p_industry TEXT[], p_city TEXT, p_state TEXT)
 RETURNS VOID AS $$
 DECLARE
     v_company_id INTEGER;
@@ -137,4 +137,4 @@ BEGIN
         );
     END IF;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = private;

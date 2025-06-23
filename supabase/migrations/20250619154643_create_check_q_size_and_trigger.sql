@@ -1,7 +1,7 @@
 
 -- Check q size, if its >=5 then trigger the worker
 
-CREATE OR REPLACE FUNCTION check_queue_size_and_trigger()
+CREATE OR REPLACE FUNCTION private.check_queue_size_and_trigger()
 RETURNS trigger AS $$
 DECLARE
   queue_size INTEGER;
@@ -11,25 +11,27 @@ DECLARE
   supabase_service_role_key TEXT;
   auth_token TEXT;
 BEGIN
-  -- Get current queue size
-
 
   SELECT count(*) INTO queue_size 
   FROM pgmq."q_image-processing";
+
+  insert into public.debug_logs (message) VALUES ('[check_queue_size_and_trigger()] queue size: ' || queue_size);
   
   IF queue_size >= queue_max THEN
     worker_url := (select decrypted_secret from vault.decrypted_secrets where name = 'worker_url');
     supabase_service_role_key := (select decrypted_secret from vault.decrypted_secrets where name = 'supabase_service_role_key');
 
     if worker_url IS NULL THEN
-      insert into debug_logs (message) VALUES ('[check_queue_size_and_trigger()] worker_url is NULL');
+      insert into public.debug_logs (message) VALUES ('[check_queue_size_and_trigger()] worker_url is NULL');
     END IF;
 
     if supabase_service_role_key IS NULL THEN
-      insert into debug_logs (message) VALUES ('[check_queue_size_and_trigger()] supabase_service_role_key is NULL');
+      insert into public.debug_logs (message) VALUES ('[check_queue_size_and_trigger()] supabase_service_role_key is NULL');
     END IF;
 
     auth_token := 'Bearer ' || supabase_service_role_key;
+
+    insert into public.debug_logs (message) VALUES (worker_url || ' ' || auth_token);
 
     
     -- Trigger worker
@@ -47,9 +49,10 @@ BEGIN
   
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = private;
+;
 
 CREATE TRIGGER "queue_threshhold" 
   AFTER INSERT ON "pgmq"."q_image-processing"
   FOR EACH ROW 
-  EXECUTE FUNCTION check_queue_size_and_trigger();
+  EXECUTE FUNCTION private.check_queue_size_and_trigger();
