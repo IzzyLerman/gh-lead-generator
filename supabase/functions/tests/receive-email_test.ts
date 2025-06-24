@@ -375,7 +375,7 @@ _test("Request with 6 attachments processes only first 5", async () => {
 });
 
 _test("HEIC attachment is converted to JPG and uploaded", async () => {
-    const heicData = await Deno.readFile("./functions/tests/img/ex.heic");
+    const heicData = await Deno.readFile("./supabase/functions/tests/img/ex.heic");
     const file = new File([heicData], "ex.heic", { type: "image/heic" });
     const formData = new FormData();
     formData.append("attachments[]", file);
@@ -419,7 +419,7 @@ _test("HEIC attachment is converted to JPG and uploaded", async () => {
 
 
 _test("MP4 video frame extraction works correctly", async () => {
-    const mp4Data = await Deno.readFile("./functions/tests/img/big_buck_bunny.mp4");
+    const mp4Data = await Deno.readFile("./supabase/functions/tests/img/big_buck_bunny.mp4");
     const file = new File([mp4Data], "big_buck_bunny.mp4", { type: "video/mp4" });
     const formData = new FormData();
     formData.append("attachments[]", file);

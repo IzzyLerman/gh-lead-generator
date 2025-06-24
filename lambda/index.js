@@ -3,6 +3,7 @@ const { simpleParser } = require('mailparser');
 const FormData = require('form-data');
 const fetch = require('node-fetch');
 const crypto = require('crypto');
+const { fromBuffer: fileTypeFromBuffer } = require('file-type');
 
 // Defer S3 client creation to allow for mocking in tests
 let s3 = null;
@@ -48,6 +49,14 @@ async function readEmailFromS3(bucketName, key) {
   }
 }
 
+async function detectFileType(attachment) {
+    const detectedType = await fileTypeFromBuffer(attachment.content);
+    if (detectedType && detectedType.mime && detectedType.mime !== attachment.contentType) {
+        return detectedType.mime;
+    }
+    return attachment.contentType;
+}
+
 async function parseEmailAndExtractAttachments(emailBuffer) {
   try {
     log('Parsing email content');
@@ -60,13 +69,20 @@ async function parseEmailAndExtractAttachments(emailBuffer) {
       return [];
     }
     
+    // Get content types for all attachments
+    const contentTypes = await Promise.all(parsed.attachments.map(async (attachment) => {
+        return await fileTypeFromBuffer(attachment.content);
+    }));
+    
     // Filter for supported image/video types and limit to 5
     const supportedAttachments = parsed.attachments
-      .filter(attachment => {
-        const contentType = attachment.contentType?.toLowerCase();
-        const isSupported = SUPPORTED_TYPES.includes(contentType);
-        if (!isSupported && contentType) {
-          log(`Skipping unsupported attachment type: ${contentType}`);
+      .filter((attachment, i) => {
+        const detectedType = contentTypes[i];
+        const mimeType = detectedType?.mime?.toLowerCase() || attachment.contentType?.toLowerCase();
+        const isSupported = SUPPORTED_TYPES.includes(mimeType);
+        
+        if (!isSupported && mimeType) {
+          log(`Skipping unsupported attachment type: ${mimeType}`);
         }
         return isSupported;
       })
@@ -119,10 +135,6 @@ async function sendAttachmentsToEndpoint(attachments, receiveEmailUrl, webhookSe
       headers['X-Signature'] = signature;
       log('Added authentication headers');
     }
-    log('Headers before fetch:', {
-        ...headers,
-        ...formData.getHeaders(),
-    });
 	    
     const response = await fetch(receiveEmailUrl, {
       method: 'POST',
@@ -153,6 +165,7 @@ async function sendAttachmentsToEndpoint(attachments, receiveEmailUrl, webhookSe
 exports.handler = async (event, context) => {
   log('Lambda function started');
   log('Event:', JSON.stringify(event, null, 2));
+
   
   try {
     const RECEIVE_EMAIL_URL = process.env.RECEIVE_EMAIL_URL;
@@ -230,4 +243,4 @@ exports.handler = async (event, context) => {
 
 module.exports.resetS3Client = function() {
   s3 = null;
-};
+}
