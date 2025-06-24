@@ -69,24 +69,42 @@ async function parseEmailAndExtractAttachments(emailBuffer) {
       return [];
     }
     
-    // Get content types for all attachments
-    const contentTypes = await Promise.all(parsed.attachments.map(async (attachment) => {
-        return await fileTypeFromBuffer(attachment.content);
-    }));
-    
     // Filter for supported image/video types and limit to 5
-    const supportedAttachments = parsed.attachments
-      .filter((attachment, i) => {
-        const detectedType = contentTypes[i];
-        const mimeType = detectedType?.mime?.toLowerCase() || attachment.contentType?.toLowerCase();
-        const isSupported = SUPPORTED_TYPES.includes(mimeType);
-        
-        if (!isSupported && mimeType) {
-          log(`Skipping unsupported attachment type: ${mimeType}`);
+    const supportedAttachments = [];
+    
+    for (const attachment of parsed.attachments) {
+      if (supportedAttachments.length >= 5) {
+        break; // Stop processing once we have 5 supported attachments
+      }
+      
+      // Always run file type detection to handle misidentified files (e.g., HEIC as application/octet-stream)
+      let finalMimeType = attachment.contentType?.toLowerCase();
+      let isSupported = false;
+      
+      try {
+        const detectedType = await fileTypeFromBuffer(attachment.content);
+        if (detectedType?.mime) {
+          finalMimeType = detectedType.mime.toLowerCase();
+          isSupported = SUPPORTED_TYPES.includes(finalMimeType);
+        } else {
+          // Fall back to declared content type if file type detection fails
+          isSupported = finalMimeType && SUPPORTED_TYPES.includes(finalMimeType);
         }
-        return isSupported;
-      })
-      .slice(0, 5); // Limit to 5 attachments
+      } catch (error) {
+        log(`Error detecting file type for ${attachment.filename}: ${error.message}`);
+        // Fall back to declared content type on error
+        isSupported = finalMimeType && SUPPORTED_TYPES.includes(finalMimeType);
+      }
+      
+      if (isSupported) {
+        supportedAttachments.push({
+          ...attachment,
+          contentType: finalMimeType // Use the final determined mime type
+        });
+      } else if (finalMimeType) {
+        log(`Skipping unsupported attachment type: ${finalMimeType}`);
+      }
+    }
     
     log(`Filtered attachments: ${supportedAttachments.length}`);
     
@@ -111,21 +129,23 @@ async function sendAttachmentsToEndpoint(attachments, receiveEmailUrl, webhookSe
     log(`Sending ${attachments.length} attachments to ${receiveEmailUrl}`);
     
     const formData = new FormData();
-    
-    attachments.forEach((attachment, index) => {
-      log(`Adding attachment ${index + 1}: ${attachment.filename} (${attachment.contentType})`);
-      formData.append('attachments[]', attachment.content, {
-        filename: attachment.filename,
-        contentType: attachment.contentType
-      });
-    });
-    
     let headers = {};
+    
+    // Combined loop for FormData creation and signature payload building
     if (webhookSecret) {
       const timestamp = Math.floor(Date.now() / 1000);
-      
       let signaturePayload = Buffer.alloc(0);
+      
       attachments.forEach((attachment, index) => {
+        log(`Adding attachment ${index + 1}: ${attachment.filename} (${attachment.contentType})`);
+        
+        // Add to FormData
+        formData.append('attachments[]', attachment.content, {
+          filename: attachment.filename,
+          contentType: attachment.contentType
+        });
+        
+        // Build signature payload at the same time
         const metaBuffer = Buffer.from(`${attachment.filename}:${attachment.contentType}:`);
         signaturePayload = Buffer.concat([signaturePayload, metaBuffer, attachment.content]);
       });
@@ -134,6 +154,15 @@ async function sendAttachmentsToEndpoint(attachments, receiveEmailUrl, webhookSe
       headers['X-Timestamp'] = timestamp.toString();
       headers['X-Signature'] = signature;
       log('Added authentication headers');
+    } else {
+      // No webhook secret, just build FormData
+      attachments.forEach((attachment, index) => {
+        log(`Adding attachment ${index + 1}: ${attachment.filename} (${attachment.contentType})`);
+        formData.append('attachments[]', attachment.content, {
+          filename: attachment.filename,
+          contentType: attachment.contentType
+        });
+      });
     }
 	    
     const response = await fetch(receiveEmailUrl, {
@@ -141,7 +170,8 @@ async function sendAttachmentsToEndpoint(attachments, receiveEmailUrl, webhookSe
       body: formData,
       headers: {
         ...headers,
-      }
+      },
+      timeout: 60000 // 60 second timeout for file uploads
     });
     
     log(`Response status: ${response.status}`);

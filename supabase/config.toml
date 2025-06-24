@@ -1,6 +1,6 @@
 
 [api]
-schemas = ["public",  "pgmq_public"]
+schemas = ["private", "public",  "pgmq_public"]
 
 [db.vault]
 worker_url = "env(WORKER_URL)"

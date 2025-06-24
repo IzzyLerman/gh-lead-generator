@@ -120,7 +120,7 @@ export const upsertCompany = async (supabase: SupabaseClient<Database>, company:
   }
 
   try {
-    const { data, error } = await supabase.rpc('upsert_company', {
+    const { data, error } = await supabase.schema('private').rpc('upsert_company', {
       p_name: company.name,
       p_email: company.email || '',
       p_phone: company.phone || '',
