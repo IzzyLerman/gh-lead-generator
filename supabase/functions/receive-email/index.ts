@@ -39,6 +39,103 @@ function log(message: string, ...args: unknown[]) {
   console.log(`[receive-email] ${message}`, ...args);
 }
 
+async function verifySignature(body: ArrayBuffer, timestamp: string, signature: string, secret: string): Promise<boolean> {
+  try {
+    const timeLimit = 5 * 60 * 1000; // 5 minutes
+    const now = Date.now();
+    const requestTime = parseInt(timestamp) * 1000;
+    
+    if (now - requestTime > timeLimit) {
+      log('Request timestamp too old');
+      return false;
+    }
+    
+    const encoder = new TextEncoder();
+    const keyData = encoder.encode(secret);
+    const key = await crypto.subtle.importKey(
+      'raw',
+      keyData,
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+    
+    const message = new Uint8Array(body.byteLength + timestamp.length);
+    message.set(new Uint8Array(body), 0);
+    message.set(encoder.encode(timestamp), body.byteLength);
+    
+    const calculatedSignature = await crypto.subtle.sign('HMAC', key, message);
+    const calculatedHex = Array.from(new Uint8Array(calculatedSignature))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+    
+    return calculatedHex === signature;
+  } catch (error) {
+    log('Signature verification error:', error);
+    return false;
+  }
+}
+
+async function verifyContentBasedSignature(attachments: File[], timestamp: string, signature: string, secret: string): Promise<boolean> {
+  try {
+    const timeLimit = 5 * 60 * 1000; // 5 minutes
+    const now = Date.now();
+    const requestTime = parseInt(timestamp) * 1000;
+    
+    if (now - requestTime > timeLimit) {
+      log('Request timestamp too old');
+      return false;
+    }
+    
+    // Recreate the signature payload that matches the Lambda function
+    const signaturePayloads: Uint8Array[] = [];
+    
+    for (const attachment of attachments) {
+      // Include filename and content type in signature for security (matching Lambda logic)
+      const metaString = `${attachment.name}:${attachment.type}:`;
+      const metaBuffer = new TextEncoder().encode(metaString);
+      const contentBuffer = new Uint8Array(await attachment.arrayBuffer());
+      
+      signaturePayloads.push(metaBuffer);
+      signaturePayloads.push(contentBuffer);
+    }
+    
+    // Concatenate all payload parts
+    const totalLength = signaturePayloads.reduce((sum, arr) => sum + arr.length, 0);
+    const signaturePayload = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const part of signaturePayloads) {
+      signaturePayload.set(part, offset);
+      offset += part.length;
+    }
+    
+    const encoder = new TextEncoder();
+    const keyData = encoder.encode(secret);
+    const key = await crypto.subtle.importKey(
+      'raw',
+      keyData,
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+    
+    // Create message with signature payload + timestamp (matching Lambda logic)
+    const message = new Uint8Array(signaturePayload.length + timestamp.length);
+    message.set(signaturePayload, 0);
+    message.set(encoder.encode(timestamp), signaturePayload.length);
+    
+    const calculatedSignature = await crypto.subtle.sign('HMAC', key, message);
+    const calculatedHex = Array.from(new Uint8Array(calculatedSignature))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+    
+    return calculatedHex === signature;
+  } catch (error) {
+    log('Content-based signature verification error:', error);
+    return false;
+  }
+}
+
 async function generateSignature(params: Record<string, string | number>, apiSecret: string): Promise<string> {
   const sortedParams = Object.keys(params)
     .sort()
@@ -88,9 +185,51 @@ async function uploadToCloudinary(videoFile: File): Promise<CloudinaryUploadResp
   return await response.json() as CloudinaryUploadResponse;
 }
 
+async function destroyCloudinaryResource(publicId: string, resourceType: 'image' | 'video' = 'video'): Promise<void> {
+  try {
+    const CLOUDINARY_CLOUD_NAME = getEnvVar("CLOUDINARY_CLOUD_NAME");
+    const CLOUDINARY_API_KEY = getEnvVar("CLOUDINARY_API_KEY");
+    const CLOUDINARY_API_SECRET = getEnvVar("CLOUDINARY_API_SECRET");
+    
+    const timestamp = Math.round(Date.now() / 1000);
+    const params = {
+      public_id: publicId,
+      timestamp: timestamp,
+    };
+
+    const signature = await generateSignature(params, CLOUDINARY_API_SECRET);
+
+    const formData = new FormData();
+    formData.append('public_id', publicId);
+    formData.append('timestamp', timestamp.toString());
+    formData.append('api_key', CLOUDINARY_API_KEY);
+    formData.append('signature', signature);
+
+    const response = await fetch(
+      `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/${resourceType}/destroy`,
+      {
+        method: 'POST',
+        body: formData
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Cloudinary destroy failed: ${response.status} ${errorText}`);
+    }
+
+    const result = await response.json();
+    log(`Successfully destroyed Cloudinary resource: ${publicId}, result: ${result.result}`);
+    
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log(`Warning: Failed to destroy Cloudinary resource ${publicId}: ${errorMessage}`);
+  }
+}
+
 function validateFile(file: File) {
-  const allowedTypes = ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/heic", "video/mp4"];
-  const maxSize = 50 * 1024 * 1024; // 50MB Max size to accommodate video files
+  const allowedTypes = ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/heic", "video/mp4", "video/mov"];
+  const maxSize = 50 * 1024 * 1024; 
   if (!allowedTypes.includes(file.type)) {
     throw new Error(`Invalid file type: ${file.type}`);
   }
@@ -133,17 +272,14 @@ async function extractVideoFrameFromCloudinary(videoFile: File): Promise<File> {
     log(`Extracting first frame from video: ${videoFile.name}`);
     const CLOUDINARY_CLOUD_NAME = getEnvVar("CLOUDINARY_CLOUD_NAME");
     
-    // 1. Upload video to Cloudinary
     const uploadResponse = await uploadToCloudinary(videoFile);
     log(`Video uploaded to Cloudinary with public_id: ${uploadResponse.public_id}\n${JSON.stringify(uploadResponse)}`);
     
-    // 2. Generate first frame thumbnail URL (so_0 = start offset 0 seconds)
     const publicId = uploadResponse["public_id"];
     if (!publicId) {
 	log(`No public_id field in Cloudinary response: ${uploadResponse}`);
     }
     
-    // 3. Download the thumbnail
     log(`Downloading first frame from image with public_id: ${publicId}`);
     const response = await fetch(`https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/so_2.5,f_jpg/${publicId}.jpg`);
     
@@ -153,15 +289,14 @@ async function extractVideoFrameFromCloudinary(videoFile: File): Promise<File> {
     
     const frameBlob = await response.blob();
     
-    // 4. Convert to File with proper naming
-    const filename = videoFile.name.replace(/\.mp4$/i, '.jpg');
+    const filename = videoFile.name.replace(/\.(mp4|mov)$/i, '.jpg');
     const resultFile = new File([frameBlob], filename, { type: 'image/jpeg' });
     
     log(`Successfully extracted frame: ${resultFile.name}, size: ${resultFile.size} bytes`);
     
-    // 5. Optional: Clean up video from Cloudinary to save storage
-    // Note: We could delete the video after extracting the frame
-    // For now, leaving it for debugging purposes
+    // 5. Clean up video from Cloudinary to save storage
+    log(`Cleaning up Cloudinary video resource: ${uploadResponse.public_id}`);
+    await destroyCloudinaryResource(uploadResponse.public_id, 'video');
     
     return resultFile;
     
@@ -176,8 +311,8 @@ async function processFileForVision(file: File, videoFrameExtractor?: typeof ext
   if (file.type === 'image/heic') {
     log(`Converting HEIC file ${file.name} to JPG`);
     return await convertHeicToJpg(file);
-  } else if (file.type === 'video/mp4') {
-    log(`Extracting frame from MP4 file ${file.name}`);
+  } else if (file.type === 'video/mp4' || file.type === 'video/mov') {
+    log(`Extracting frame from video file ${file.name}`);
     const extractor = videoFrameExtractor ?? extractVideoFrameFromCloudinary;
     return await extractor(file);
   } else {
@@ -216,6 +351,43 @@ export async function triggerWorker(supabase: SupabaseClient<Database>) {
   }
 }
 
+async function processAttachments(
+  attachments: File[],
+  supabase: SupabaseClient<Database>,
+  pgmq_public: SupabaseClient<Database, 'pgmq_public'>,
+  enqueue: typeof enqueueImageJob,
+  videoFrameExtractor?: typeof extractVideoFrameFromCloudinary
+): Promise<Response> {
+  if (attachments.length > 5) {
+    attachments.splice(5);
+  }
+
+  if (attachments.length === 0) {
+    log("No attachments found");
+    return new Response(JSON.stringify({ error: "No attachments found" }), { status: 400, headers: { "Content-Type": "application/json" } });
+  }
+
+  const uploadedPaths: string[] = [];
+  
+  for (const file of attachments) {
+    validateFile(file);
+    const processedFile = await processFileForVision(file, videoFrameExtractor);
+    const filename = generateUniqueFilename(processedFile.name);
+    log(`Uploading file as ${filename}`);
+    const uploadData = await uploadFileToStorage(supabase, processedFile, filename);
+    log(`File uploaded: ${uploadData.path}`);
+    uploadedPaths.push(uploadData.path);
+    
+    await enqueue(pgmq_public, uploadData.path);
+    log(`Job enqueued for image: ${uploadData.path} `);
+  }
+
+  return new Response(JSON.stringify({ success: true, paths: uploadedPaths, count: attachments.length }), {
+    headers: { "Content-Type": "application/json" },
+    status: 200,
+  });
+}
+
 export const handler = async (
     req: Request,
     options?: {
@@ -249,11 +421,35 @@ export const handler = async (
 
   if (req.method !== "POST") {
     return new Response("Method Not Allowed", { status: 405 });
-
   }
+
+  console.log("INCOMING REQUEST HEADERS:", Object.fromEntries(req.headers));
+
+  // WEBHOOK_SECRET is required for security
+  const webhookSecret = Deno.env.get("WEBHOOK_SECRET");
+  if (!webhookSecret) {
+    log('WEBHOOK_SECRET environment variable is required');
+    return new Response(JSON.stringify({ error: "Server configuration error" }), { 
+      status: 500, 
+      headers: { "Content-Type": "application/json" } 
+    });
+  }
+
+  // Verify HMAC authentication (always required)
   try {
+    const timestamp = req.headers.get('X-Timestamp');
+    const signature = req.headers.get('X-Signature');
+    
+    if (!timestamp || !signature) {
+      log('Missing authentication headers');
+      return new Response(JSON.stringify({ error: "Missing authentication headers" }), { 
+        status: 401, 
+        headers: { "Content-Type": "application/json" } 
+      });
+    }
+    
+    // Parse form data first to extract attachments for content-based signature
     const formData = await req.formData();
-        
     const attachmentEntries = formData.getAll("attachments[]");
     const attachments: File[] = [];
     
@@ -263,39 +459,18 @@ export const handler = async (
       }
     }
     
-    if (attachments.length > 5) {
-      attachments.splice(5);
-    }
-
-    if (attachments.length === 0) {
-      log("No attachments found");
-      return new Response(JSON.stringify({ error: "No attachments found" }), { status: 400, headers: { "Content-Type": "application/json" } });
-    }
-
-    if (attachments.length > 5) {
-      log(`Too many attachments: ${attachments.length}`);
-      return new Response(JSON.stringify({ error: "Maximum 5 attachments allowed" }), { status: 400, headers: { "Content-Type": "application/json" } });
-    }
-
-    const uploadedPaths: string[] = [];
+    // Use content-based signature verification instead of FormData body
+    const isValid = await verifyContentBasedSignature(attachments, timestamp, signature, webhookSecret);
     
-    for (const file of attachments) {
-      validateFile(file);
-      const processedFile = await processFileForVision(file, videoFrameExtractor);
-      const filename = generateUniqueFilename(processedFile.name);
-      log(`Uploading file as ${filename}`);
-      const uploadData = await uploadFileToStorage(supabase, processedFile, filename);
-      log(`File uploaded: ${uploadData.path}`);
-      uploadedPaths.push(uploadData.path);
-      
-      await enqueue(pgmq_public, uploadData.path);
-      log(`Job enqueued for image: ${uploadData.path} `);
+    if (!isValid) {
+      log('Invalid signature or timestamp');
+      return new Response(JSON.stringify({ error: "Invalid authentication" }), { 
+        status: 401, 
+        headers: { "Content-Type": "application/json" } 
+      });
     }
-
-    return new Response(JSON.stringify({ success: true, paths: uploadedPaths, count: attachments.length }), {
-      headers: { "Content-Type": "application/json" },
-      status: 200,
-    });
+    
+    return await processAttachments(attachments, supabase, pgmq_public, enqueue, videoFrameExtractor);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     log(`Error: ${errorMessage}`);
