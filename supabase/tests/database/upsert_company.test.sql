@@ -10,7 +10,7 @@ SELECT lives_ok(
 
 -- Test 2: Verify company was inserted correctly
 SELECT is(
-    (SELECT COUNT(*) FROM companies WHERE name = 'Test Company Inc'),
+    (SELECT COUNT(*) FROM public.companies WHERE name = 'Test Company Inc'),
     1::bigint,
     'Company should be inserted once'
 );
@@ -22,14 +22,14 @@ SELECT lives_ok(
 );
 
 SELECT is(
-    (SELECT COUNT(*) FROM companies WHERE private.normalize_company_name(name) = private.normalize_company_name('Test Company Inc')),
+    (SELECT COUNT(*) FROM public.companies WHERE private.normalize_company_name(name) = private.normalize_company_name('Test Company Inc')),
     1::bigint,
     'Should update existing company, not create duplicate'
 );
 
 -- Test 4: Verify email array was updated
 SELECT ok(
-    (SELECT 'another@example.com' = ANY(email) FROM companies WHERE name = 'Test Company Inc'),
+    (SELECT 'another@example.com' = ANY(email) FROM public.companies WHERE name = 'Test Company Inc'),
     'Should add new email to existing company'
 );
 
@@ -40,7 +40,7 @@ SELECT lives_ok(
 );
 
 -- Test 6: Test email matching when name doesn't match
-INSERT INTO companies (name, primary_email, email) VALUES ('Different Name', 'unique@test.com', ARRAY['unique@test.com']);
+INSERT INTO public.companies (name, primary_email, email) VALUES ('Different Name', 'unique@test.com', ARRAY['unique@test.com']);
 
 SELECT lives_ok(
     $$ SELECT private.upsert_company('Another Name', 'unique@test.com', '123-456-7890', ARRAY['Finance'], 'NYC', 'NY') $$,
@@ -48,13 +48,13 @@ SELECT lives_ok(
 );
 
 SELECT is(
-    (SELECT phone[1] FROM companies WHERE primary_email = 'unique@test.com'),
+    (SELECT phone[1] FROM public.companies WHERE primary_email = 'unique@test.com'),
     '123-456-7890',
     'Should update company matched by email'
 );
 
 -- Test 7: Test phone matching when name and email don't match
-INSERT INTO companies (name, primary_phone, phone) VALUES ('Phone Company', '555-000-1111', ARRAY['555-000-1111']);
+INSERT INTO public.companies (name, primary_phone, phone) VALUES ('Phone Company', '555-000-1111', ARRAY['555-000-1111']);
 
 SELECT lives_ok(
     $$ SELECT private.upsert_company('Phone Match Test', 'newphone@test.com', '(555) 000-1111', ARRAY['Telecom'], 'Boston', 'MA') $$,
@@ -62,7 +62,7 @@ SELECT lives_ok(
 );
 
 SELECT is(
-    (SELECT primary_email FROM companies WHERE name = 'Phone Company'),
+    (SELECT primary_email FROM public.companies WHERE name = 'Phone Company'),
     'newphone@test.com',
     'Should update company matched by phone'
 );
@@ -74,12 +74,12 @@ SELECT lives_ok(
 );
 
 SELECT ok(
-    (SELECT 'Consulting' = ANY(industry) FROM companies WHERE name = 'Test Company Inc'),
+    (SELECT 'Consulting' = ANY(industry) FROM public.companies WHERE name = 'Test Company Inc'),
     'Should include new industry in merged array'
 );
 
 SELECT ok(
-    (SELECT 'Technology' = ANY(industry) FROM companies WHERE name = 'Test Company Inc'),
+    (SELECT 'Technology' = ANY(industry) FROM public.companies WHERE name = 'Test Company Inc'),
     'Should preserve existing industry in merged array'
 );
 
@@ -103,7 +103,7 @@ SELECT is(
 );
 
 -- Clean up test data
-DELETE FROM companies WHERE name IN ('Test Company Inc', 'Minimal Co', 'Different Name', 'Phone Company');
+DELETE FROM public.companies WHERE name IN ('Test Company Inc', 'Minimal Co', 'Different Name', 'Phone Company');
 
 SELECT finish();
 

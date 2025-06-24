@@ -124,7 +124,7 @@ BEGIN
         WHERE id = v_company_id;
     ELSE
         -- Company does not exist, so insert a new one
-        INSERT INTO public.companies (name, primary_email, email, primary_phone, phone, industry, city, state)
+        INSERT INTO public.companies (name, primary_email, email, primary_phone, phone, industry, city, state, status, "group")
         VALUES (
             p_name, 
             CASE WHEN p_email IS NOT NULL AND p_email != '' THEN p_email ELSE '' END,
@@ -133,7 +133,9 @@ BEGIN
             CASE WHEN p_phone IS NOT NULL AND p_phone != '' THEN ARRAY[p_phone] ELSE '{}' END,
             COALESCE(p_industry, '{}'),
             COALESCE(p_city, ''),
-            COALESCE(p_state, '')
+            COALESCE(p_state, ''),
+            'enriching',
+            'new'
         );
     END IF;
 END;

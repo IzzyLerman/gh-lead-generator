@@ -257,7 +257,9 @@ _test("processOCRWithLLM handles LLM response without content", async () => {
 
 _test("upsertCompany succeeds with valid data", async () => {
     const mockSupabase = {
-        rpc: async () => ({ data: { id: 1 }, error: null })
+        schema: () => ({
+            rpc: async () => ({ data: { id: 1 }, error: null })
+        })
     };
     const company = { name: "Test Co", email: "test@example.com" };
     
@@ -268,7 +270,9 @@ _test("upsertCompany succeeds with valid data", async () => {
 
 _test("upsertCompany fails with missing name", async () => {
     const mockSupabase = {
-        rpc: async () => ({ data: null, error: null })
+        schema: () => ({
+            rpc: async () => ({ data: null, error: null })
+        })
     };
     const company = { name: "", email: "test@example.com" };
     
