@@ -325,7 +325,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
               <div>
                 <h3 className="font-semibold mb-2">Sending Pictures</h3>
                 <p className="text-sm text-muted-foreground">
-                  Send up to five images to <a href="mailto:vehicles@izzy.fish" className="text-blue-600 hover:text-blue-800 transition-colors duration-200 hover:underline">vehicles@izzy.fish</a> as an attachment. It will accept .jpg, .png, .heic, .mp4, and .mov file types. If you need to submit more than five pictures, email me and I can submit them as a batch.
+                  Email up to five images to <a href="mailto:vehicles@izzy.fish" className="text-blue-600 hover:text-blue-800 transition-colors duration-200 hover:underline">vehicles@izzy.fish</a> as an attachment. It will accept .jpg, .png, .heic, .mp4, and .mov file types. If you need to submit more than five pictures, message me and I can submit them as a batch.
                 </p>
               </div>
               
@@ -454,11 +454,17 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                   <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
                     company.status === 'enriching' 
                       ? 'bg-yellow-100 text-yellow-800' 
+                      : company.status === 'generating_email'
+                      ? 'bg-blue-100 text-blue-800'
+                      : company.status === 'ready_to_send'
+                      ? 'bg-orange-100 text-orange-800'
                       : company.status === 'completed'
                       ? 'bg-green-100 text-green-800'
                       : 'bg-gray-100 text-gray-800'
                   }`}>
-                    {company.status || 'unknown'}
+                    {company.status === 'generating_email' ? 'Generating Email' 
+                      : company.status === 'ready_to_send' ? 'Ready to Send'
+                      : company.status || 'unknown'}
                   </span>
                 </TableCell>
                 <TableCell className="max-w-xs">
@@ -513,7 +519,20 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                   </TableCell>
                   <TableCell></TableCell>
                   <TableCell></TableCell>
-                  <TableCell></TableCell>
+                  <TableCell>
+                    <div className="max-w-xs">
+                      <div className="space-y-1 text-sm">
+                        {contact.message && (
+                          <div className="truncate text-muted-foreground" title={contact.message}>
+                            {contact.message}
+                          </div>
+                        )}
+                        {!contact.message && (
+                          <div className="text-muted-foreground">-</div>
+                        )}
+                      </div>
+                    </div>
+                  </TableCell>
                   <TableCell className="text-muted-foreground text-sm">
                     {formatDate(contact.created_at)}
                   </TableCell>
