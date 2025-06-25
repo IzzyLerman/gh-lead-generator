@@ -55,13 +55,13 @@ VALUES ('Test Contact', 'Manager', 'contact@test.com', '555-123-4567',
         (SELECT id FROM public.companies WHERE name = 'Test, Company "Quotes"'));
 
 SELECT ok(
-    (SELECT private.export_companies_csv() LIKE '%''Test, Company "Quotes"''%'),
+    (SELECT private.export_companies_csv() LIKE '%"Test, Company ""Quotes""%'),
     'Companies CSV should properly quote fields containing commas and quotes'
 );
 
 -- Test 9: Verify contacts CSV includes company name
 SELECT ok(
-    (SELECT private.export_contacts_csv() LIKE '%''Test, Company "Quotes"''%''Test Contact''%'),
+    (SELECT private.export_contacts_csv() LIKE '%"Test, Company ""Quotes""%"Test Contact"%'),
     'Contacts CSV should include company name for each contact'
 );
 

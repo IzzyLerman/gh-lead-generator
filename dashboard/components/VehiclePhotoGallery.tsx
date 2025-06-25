@@ -101,7 +101,7 @@ export function VehiclePhotoGallery({ photos, companyName }: VehiclePhotoGallery
               )}
               {photo.error && !photo.loading && (
                 <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">
-                  Error
+                  📷
                 </div>
               )}
               {photo.signedUrl && !photo.loading && !photo.error && (

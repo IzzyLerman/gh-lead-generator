@@ -26,6 +26,10 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
   const [isExporting, setIsExporting] = useState<string | null>(null)
   const supabase = createClient()
 
+  // Debug logging
+  console.log('CompaniesTable component mounted')
+  console.log('Initial data length:', initialData.length)
+
   useEffect(() => {
     console.log('Setting up realtime subscription...')
     const channel = supabase

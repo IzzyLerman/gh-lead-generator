@@ -12,16 +12,16 @@ BEGIN
         SELECT 'name,industry,primary_email,email_list,primary_phone,phone_list,city,state,status,group' AS csv_row
         UNION ALL
         SELECT 
-            quote_literal(name) || ',' ||
-            quote_literal(array_to_string(industry, ';')) || ',' ||
-            quote_literal(COALESCE(primary_email, '')) || ',' ||
-            quote_literal(array_to_string(email, ';')) || ',' ||
-            quote_literal(COALESCE(primary_phone, '')) || ',' ||
-            quote_literal(array_to_string(phone, ';')) || ',' ||
-            quote_literal(COALESCE(city, '')) || ',' ||
-            quote_literal(COALESCE(state, '')) || ',' ||
-            quote_literal(COALESCE(status, '')) || ',' ||
-            quote_literal(COALESCE("group", '')) AS csv_row
+            '"' || REPLACE(COALESCE(name, ''), '"', '""') || '",' ||
+            '"' || REPLACE(array_to_string(COALESCE(industry, '{}'), ';'), '"', '""') || '",' ||
+            '"' || REPLACE(COALESCE(primary_email, ''), '"', '""') || '",' ||
+            '"' || REPLACE(array_to_string(COALESCE(email, '{}'), ';'), '"', '""') || '",' ||
+            '"' || REPLACE(COALESCE(primary_phone, ''), '"', '""') || '",' ||
+            '"' || REPLACE(array_to_string(COALESCE(phone, '{}'), ';'), '"', '""') || '",' ||
+            '"' || REPLACE(COALESCE(city, ''), '"', '""') || '",' ||
+            '"' || REPLACE(COALESCE(state, ''), '"', '""') || '",' ||
+            '"' || REPLACE(COALESCE(status, ''), '"', '""') || '",' ||
+            '"' || REPLACE(COALESCE("group", ''), '"', '""') || '"' AS csv_row
         FROM public.companies
     ) all_data;
     
@@ -40,12 +40,12 @@ BEGIN
         SELECT 'company_name,contact_name,title,email,phone,message' AS csv_row
         UNION ALL
         SELECT 
-            quote_literal(c.name) || ',' ||
-            quote_literal(COALESCE(ct.name, '')) || ',' ||
-            quote_literal(COALESCE(ct.title, '')) || ',' ||
-            quote_literal(COALESCE(ct.email, '')) || ',' ||
-            quote_literal(COALESCE(ct.phone, '')) || ',' ||
-            quote_literal(COALESCE(ct.message, '')) AS csv_row
+            '"' || REPLACE(COALESCE(c.name, ''), '"', '""') || '",' ||
+            '"' || REPLACE(COALESCE(ct.name, ''), '"', '""') || '",' ||
+            '"' || REPLACE(COALESCE(ct.title, ''), '"', '""') || '",' ||
+            '"' || REPLACE(COALESCE(ct.email, ''), '"', '""') || '",' ||
+            '"' || REPLACE(COALESCE(ct.phone, ''), '"', '""') || '",' ||
+            '"' || REPLACE(COALESCE(ct.message, ''), '"', '""') || '"' AS csv_row
         FROM public.contacts ct
         JOIN public.companies c ON ct.company_id = c.id
     ) all_data;
