@@ -11,7 +11,7 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: 'https',
-        hostname: process.env.SUPABASE_STORAGE_IP || 'localhost',
+        hostname: process.env.NEXT_PUBLIC_SUPABASE_HOSTNAME || 'localhost',
         pathname: '/storage/v1/object/sign/gh-vehicle-photos/**',
       }
     ],
