@@ -32,7 +32,7 @@ $$ LANGUAGE plpgsql IMMUTABLE SECURITY DEFINER SET search_path = private;
 CREATE OR REPLACE FUNCTION private.upsert_company(p_name TEXT, p_email TEXT, p_phone TEXT, p_industry TEXT[], p_city TEXT, p_state TEXT)
 RETURNS VOID AS $$
 DECLARE
-    v_company_id INTEGER;
+    v_company_id UUID;
     v_normalized_name TEXT;
     v_normalized_email TEXT;
     v_normalized_phone TEXT;

@@ -316,6 +316,20 @@ async function processMessages(companies: CompanyUpsertData[], messages: QueueMe
       await archiveMessage(pgmq_public, message);
     } else {
       log("Successfully upserted", company.name);
+      
+      // Update vehicle_photos table with company_id
+      const pathname = message.message.image_path;
+      const { error: updateError } = await supabase
+        .from('vehicle-photos')
+        .update({ company_id: result.data })
+        .eq('name', pathname);
+      
+      if (updateError) {
+        log("Error updating vehicle_photos with company_id:", updateError);
+      } else {
+        log("Successfully linked vehicle photo to company");
+      }
+      
       await deleteMessage(pgmq_public, message);
     }
   });

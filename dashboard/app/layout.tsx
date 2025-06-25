@@ -33,7 +33,7 @@ export default function RootLayout({
             {children}
           </main>
           <footer className="border-t bg-background px-4 py-6 text-center text-sm text-muted-foreground">
-            Created by Izzy Lerman. <a href="mailto:izzylerman14@gmail.com" className="underline hover:text-foreground">izzylerman14@gmail.com</a>
+            Created by Izzy Lerman <a href="mailto:izzylerman14@gmail.com" className="underline hover:text-foreground">izzylerman14@gmail.com</a>
           </footer>
         </ThemeProvider>
       </body>

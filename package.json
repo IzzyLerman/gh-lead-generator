@@ -3,7 +3,9 @@
     "@supabase/supabase-js": "^2.50.0",
     "cloudinary": "^2.7.0",
     "deno": "^2.3.6",
+    "dotenv": "^16.5.0",
     "heic-convert": "^2.1.0",
+    "mime-types": "^3.0.1",
     "openai": "^4.52.5"
   }
 }

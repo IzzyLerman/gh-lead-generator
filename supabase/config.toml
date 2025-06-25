@@ -5,10 +5,6 @@ schemas = ["private", "public",  "pgmq_public"]
 [db]
 major_version="15"
 
-[db.vault]
-worker_url = "env(WORKER_URL)"
-supabase_service_role_key = "env(SUPABASE_SERVICE_ROLE_KEY)"
-
 [functions.receive-email]
 enabled = true
 verify_jwt = false
@@ -30,3 +26,8 @@ entrypoint = "./functions/worker/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/worker/*.html" ]
+
+[storage.buckets."gh-vehicle-photos"]
+public = false
+file_size_limit = "50MiB"
+objects_path = "./seed_img"

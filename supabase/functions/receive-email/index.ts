@@ -401,6 +401,7 @@ export const handler = async (
 
 
   const SUPABASE_SERVICE_ROLE_KEY = getEnvVar("SUPABASE_SERVICE_ROLE_KEY");
+  log(SUPABASE_SERVICE_ROLE_KEY);
   const SUPABASE_URL = getEnvVar("SUPABASE_URL");
   const WORKER_URL = getEnvVar("WORKER_URL");
 

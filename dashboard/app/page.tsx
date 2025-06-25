@@ -1,26 +1,28 @@
-import { fetchCompaniesWithContacts } from '@/lib/server-utils'
+import { fetchCompaniesWithContactsAndPhotos } from '@/lib/server-utils'
 import CompaniesTable from '@/components/CompaniesTable'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ThemeToggle } from '@/components/ui/theme-toggle'
 
 export default async function Dashboard() {
-  const companies = await fetchCompaniesWithContacts()
+  const companies = await fetchCompaniesWithContactsAndPhotos()
 
   return (
-    <div className="container mx-auto py-8 px-4">
-      <div className="flex flex-col gap-6">
+    <div className="flex-1 bg-gray-50 dark:bg-background">
+      <div className="container mx-auto py-8 px-4">
+        <div className="flex flex-col gap-6">
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold">GH Lead Generator Dashboard</h1>
               <p className="text-muted-foreground">
-                Let's get some leads yo
+                Let&apos;s get some leads yo
               </p>
             </div>
             <ThemeToggle />
           </div>
         </div>
-        
+       
+        {/* Total cards -- removed but maybe I'll add it back
         <div className="grid gap-4 md:grid-cols-3">
           <Card>
             <CardHeader className="pb-2">
@@ -53,6 +55,8 @@ export default async function Dashboard() {
             </CardContent>
           </Card>
         </div>
+	*/}
+	
 
         <Card>
           <CardHeader>
@@ -62,6 +66,7 @@ export default async function Dashboard() {
             <CompaniesTable initialData={companies} />
           </CardContent>
         </Card>
+        </div>
       </div>
     </div>
   )
