@@ -132,9 +132,21 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
           }
         }
       )
-      .subscribe()
+      .subscribe((status) => {
+        console.log('Realtime subscription status:', status)
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ Successfully subscribed to realtime changes')
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('❌ Realtime subscription error')
+        } else if (status === 'TIMED_OUT') {
+          console.error('⏰ Realtime subscription timed out')
+        } else if (status === 'CLOSED') {
+          console.log('🔒 Realtime subscription closed')
+        }
+      })
 
     return () => {
+      console.log('Cleaning up realtime subscription')
       supabase.removeChannel(channel)
     }
   }, [supabase])

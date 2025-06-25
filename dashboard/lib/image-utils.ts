@@ -7,18 +7,27 @@ export async function getSignedImageUrl(fileName: string): Promise<string | null
   const supabase = createClient()
   
   try {
+    console.log('Getting signed URL for:', fileName)
     const { data, error } = await supabase.storage
       .from(BUCKET_NAME)
       .createSignedUrl(fileName, 60 * 60) // 1 hour expiry
 
     if (error) {
       console.error('Error creating signed URL:', error)
+      console.error('Error details:', JSON.stringify(error, null, 2))
       return null
     }
 
+    if (!data?.signedUrl) {
+      console.error('No signed URL returned for:', fileName)
+      return null
+    }
+
+    console.log('Successfully created signed URL for:', fileName)
     return data.signedUrl
   } catch (error) {
     console.error('Error in getSignedImageUrl:', error)
+    console.error('Error stack:', error)
     return null
   }
 }

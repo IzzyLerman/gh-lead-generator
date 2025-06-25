@@ -30,7 +30,7 @@ END;
 $$ LANGUAGE plpgsql IMMUTABLE SECURITY DEFINER SET search_path = private;
 
 CREATE OR REPLACE FUNCTION private.upsert_company(p_name TEXT, p_email TEXT, p_phone TEXT, p_industry TEXT[], p_city TEXT, p_state TEXT)
-RETURNS VOID AS $$
+RETURNS UUID AS $$
 DECLARE
     v_company_id UUID;
     v_normalized_name TEXT;
@@ -136,7 +136,9 @@ BEGIN
             COALESCE(p_state, ''),
             'enriching',
             'new'
-        );
+        ) RETURNING id INTO v_company_id;
     END IF;
+    
+    RETURN v_company_id;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = private;
