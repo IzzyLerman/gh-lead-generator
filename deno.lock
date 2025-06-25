@@ -873,7 +873,9 @@
         "npm:@supabase/supabase-js@^2.50.0",
         "npm:cloudinary@^2.7.0",
         "npm:deno@^2.3.6",
+        "npm:dotenv@^16.5.0",
         "npm:heic-convert@^2.1.0",
+        "npm:mime-types@^3.0.1",
         "npm:openai@^4.52.5"
       ]
     }

@@ -281,7 +281,7 @@ async function extractVideoFrameFromCloudinary(videoFile: File): Promise<File> {
     }
     
     log(`Downloading first frame from image with public_id: ${publicId}`);
-    const response = await fetch(`https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/so_2.5,f_jpg/${publicId}.jpg`);
+    const response = await fetch(`https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/so_1,f_jpg/${publicId}.jpg`);
     
     if (!response.ok) {
       throw new Error(`Failed to download thumbnail: ${response.status} ${response.statusText}`);
@@ -368,21 +368,50 @@ async function processAttachments(
   }
 
   const uploadedPaths: string[] = [];
+  const errors: string[] = [];
   
   for (const file of attachments) {
-    validateFile(file);
-    const processedFile = await processFileForVision(file, videoFrameExtractor);
-    const filename = generateUniqueFilename(processedFile.name);
-    log(`Uploading file as ${filename}`);
-    const uploadData = await uploadFileToStorage(supabase, processedFile, filename);
-    log(`File uploaded: ${uploadData.path}`);
-    uploadedPaths.push(uploadData.path);
-    
-    await enqueue(pgmq_public, uploadData.path);
-    log(`Job enqueued for image: ${uploadData.path} `);
+    try {
+      validateFile(file);
+      const processedFile = await processFileForVision(file, videoFrameExtractor);
+      const filename = generateUniqueFilename(processedFile.name);
+      log(`Uploading file as ${filename}`);
+      const uploadData = await uploadFileToStorage(supabase, processedFile, filename);
+      log(`File uploaded: ${uploadData.path}`);
+      uploadedPaths.push(uploadData.path);
+      
+      await enqueue(pgmq_public, uploadData.path);
+      log(`Job enqueued for image: ${uploadData.path} `);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      log(`Failed to process file ${file.name}: ${errorMessage}`);
+      errors.push(`${file.name}: ${errorMessage}`);
+    }
   }
 
-  return new Response(JSON.stringify({ success: true, paths: uploadedPaths, count: attachments.length }), {
+  if (uploadedPaths.length === 0) {
+    log("No files were successfully processed");
+    return new Response(JSON.stringify({ 
+      error: "No files could be processed", 
+      errors: errors 
+    }), { 
+      status: 400, 
+      headers: { "Content-Type": "application/json" } 
+    });
+  }
+
+  const response: any = { 
+    success: true, 
+    paths: uploadedPaths, 
+    count: uploadedPaths.length 
+  };
+  
+  if (errors.length > 0) {
+    response.warnings = errors;
+    response.skipped = errors.length;
+  }
+
+  return new Response(JSON.stringify(response), {
     headers: { "Content-Type": "application/json" },
     status: 200,
   });

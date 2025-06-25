@@ -11,24 +11,44 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
-import { ChevronRight, ChevronDown, Mail, Phone, MapPin, Building, Download } from 'lucide-react'
-import { CompanyWithContactsAndPhotos } from '@/lib/server-utils'
+import { ChevronRight, ChevronDown, Mail, Phone, MapPin, Building, Download, HelpCircle } from 'lucide-react'
+import { CompanyWithContactsAndPhotos, PaginatedResult } from '@/lib/server-utils'
+import { fetchCompaniesWithContactsAndPhotos } from '@/lib/client-utils'
 import { VehiclePhotoGallery } from './VehiclePhotoGallery'
 import { Tables } from '@/types/database'
+import { Pagination } from '@/components/ui/pagination'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 
 interface CompaniesTableProps {
-  initialData: CompanyWithContactsAndPhotos[]
+  initialData?: PaginatedResult<CompanyWithContactsAndPhotos>
 }
 
 export default function CompaniesTable({ initialData }: CompaniesTableProps) {
-  const [companies, setCompanies] = useState<CompanyWithContactsAndPhotos[]>(initialData)
+  const [paginatedData, setPaginatedData] = useState<PaginatedResult<CompanyWithContactsAndPhotos>>(
+    initialData || { data: [], totalCount: 0, totalPages: 0, currentPage: 1, pageSize: 8 }
+  )
   const [expandedCompanies, setExpandedCompanies] = useState<Set<string>>(new Set())
   const [isExporting, setIsExporting] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
   const supabase = createClient()
 
   // Debug logging
   console.log('CompaniesTable component mounted')
-  console.log('Initial data length:', initialData.length)
+  console.log('Initial data length:', paginatedData.data.length)
+  console.log('Total count:', paginatedData.totalCount)
+
+  const handlePageChange = async (page: number) => {
+    setIsLoading(true)
+    try {
+      const result = await fetchCompaniesWithContactsAndPhotos({ page, pageSize: 8 })
+      setPaginatedData(result)
+      setExpandedCompanies(new Set()) // Clear expanded state when changing pages
+    } catch (error) {
+      console.error('Error fetching page data:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   useEffect(() => {
     console.log('Setting up realtime subscription...')
@@ -41,22 +61,26 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
           console.log('🏢 Company change detected:', payload)
           
           if (payload.eventType === 'INSERT') {
-            const newCompany = payload.new as Tables<'companies'>
-            setCompanies(prev => [{
-              ...newCompany,
-              contacts: [],
-              'vehicle-photos': []
-            }, ...prev])
+            // For new companies, refresh the current page if we're on page 1
+            if (paginatedData.currentPage === 1) {
+              handlePageChange(1)
+            }
           } else if (payload.eventType === 'UPDATE') {
             const updatedCompany = payload.new as Tables<'companies'>
-            setCompanies(prev => prev.map(company => 
-              company.id === updatedCompany.id 
-                ? { ...updatedCompany, contacts: company.contacts, 'vehicle-photos': company['vehicle-photos'] }
-                : company
-            ))
+            setPaginatedData(prev => ({
+              ...prev,
+              data: prev.data.map(company => 
+                company.id === updatedCompany.id 
+                  ? { ...updatedCompany, contacts: company.contacts, 'vehicle-photos': company['vehicle-photos'] }
+                  : company
+              )
+            }))
           } else if (payload.eventType === 'DELETE') {
             const deletedId = payload.old.id
-            setCompanies(prev => prev.filter(company => company.id !== deletedId))
+            setPaginatedData(prev => ({
+              ...prev,
+              data: prev.data.filter(company => company.id !== deletedId)
+            }))
           }
         }
       )
@@ -68,33 +92,42 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
           
           if (payload.eventType === 'INSERT') {
             const newContact = payload.new as Tables<'contacts'>
-            setCompanies(prev => prev.map(company => 
-              company.id.toString() === newContact.company_id
-                ? { ...company, contacts: [...company.contacts, newContact] }
-                : company
-            ))
+            setPaginatedData(prev => ({
+              ...prev,
+              data: prev.data.map(company => 
+                company.id.toString() === newContact.company_id
+                  ? { ...company, contacts: [...company.contacts, newContact] }
+                  : company
+              )
+            }))
           } else if (payload.eventType === 'UPDATE') {
             const updatedContact = payload.new as Tables<'contacts'>
-            setCompanies(prev => prev.map(company => 
-              company.id.toString() === updatedContact.company_id
-                ? { 
-                    ...company, 
-                    contacts: company.contacts.map(contact => 
-                      contact.id === updatedContact.id ? updatedContact : contact
-                    )
-                  }
-                : company
-            ))
+            setPaginatedData(prev => ({
+              ...prev,
+              data: prev.data.map(company => 
+                company.id.toString() === updatedContact.company_id
+                  ? { 
+                      ...company, 
+                      contacts: company.contacts.map(contact => 
+                        contact.id === updatedContact.id ? updatedContact : contact
+                      )
+                    }
+                  : company
+              )
+            }))
           } else if (payload.eventType === 'DELETE') {
             const deletedContact = payload.old as Tables<'contacts'>
-            setCompanies(prev => prev.map(company => 
-              company.id.toString() === deletedContact.company_id
-                ? { 
-                    ...company, 
-                    contacts: company.contacts.filter(contact => contact.id !== deletedContact.id)
-                  }
-                : company
-            ))
+            setPaginatedData(prev => ({
+              ...prev,
+              data: prev.data.map(company => 
+                company.id.toString() === deletedContact.company_id
+                  ? { 
+                      ...company, 
+                      contacts: company.contacts.filter(contact => contact.id !== deletedContact.id)
+                    }
+                  : company
+              )
+            }))
           }
         }
       )
@@ -106,33 +139,42 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
           
           if (payload.eventType === 'INSERT') {
             const newPhoto = payload.new as Tables<'vehicle-photos'>
-            setCompanies(prev => prev.map(company => 
-              company.id === newPhoto.company_id
-                ? { ...company, 'vehicle-photos': [...company['vehicle-photos'], newPhoto] }
-                : company
-            ))
+            setPaginatedData(prev => ({
+              ...prev,
+              data: prev.data.map(company => 
+                company.id === newPhoto.company_id
+                  ? { ...company, 'vehicle-photos': [...company['vehicle-photos'], newPhoto] }
+                  : company
+              )
+            }))
           } else if (payload.eventType === 'UPDATE') {
             const updatedPhoto = payload.new as Tables<'vehicle-photos'>
-            setCompanies(prev => prev.map(company => 
-              company.id === updatedPhoto.company_id
-                ? { 
-                    ...company, 
-                    'vehicle-photos': company['vehicle-photos'].map(photo => 
-                      photo.id === updatedPhoto.id ? updatedPhoto : photo
-                    )
-                  }
-                : company
-            ))
+            setPaginatedData(prev => ({
+              ...prev,
+              data: prev.data.map(company => 
+                company.id === updatedPhoto.company_id
+                  ? { 
+                      ...company, 
+                      'vehicle-photos': company['vehicle-photos'].map(photo => 
+                        photo.id === updatedPhoto.id ? updatedPhoto : photo
+                      )
+                    }
+                  : company
+              )
+            }))
           } else if (payload.eventType === 'DELETE') {
             const deletedPhoto = payload.old as Tables<'vehicle-photos'>
-            setCompanies(prev => prev.map(company => 
-              company.id === deletedPhoto.company_id
-                ? { 
-                    ...company, 
-                    'vehicle-photos': company['vehicle-photos'].filter(photo => photo.id !== deletedPhoto.id)
-                  }
-                : company
-            ))
+            setPaginatedData(prev => ({
+              ...prev,
+              data: prev.data.map(company => 
+                company.id === deletedPhoto.company_id
+                  ? { 
+                      ...company, 
+                      'vehicle-photos': company['vehicle-photos'].filter(photo => photo.id !== deletedPhoto.id)
+                    }
+                  : company
+              )
+            }))
           }
         }
       )
@@ -153,7 +195,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
       console.log('Cleaning up realtime subscription')
       supabase.removeChannel(channel)
     }
-  }, [supabase])
+  }, [supabase, paginatedData.currentPage])
 
   const toggleExpand = (companyId: string) => {
     setExpandedCompanies(prev => {
@@ -247,24 +289,85 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
 
   return (
     <div className="space-y-4">
-      {/* Export buttons */}
-      <div className="flex gap-2 px-6 pt-4">
-        <Button
-          onClick={handleExportCompanies}
-          disabled={isExporting !== null}
-          variant="outline"
-        >
-          <Download className="h-4 w-4 mr-2" />
-          {isExporting === 'companies' ? 'Exporting...' : 'Export Companies to CSV'}
-        </Button>
-        <Button
-          onClick={handleExportContacts}
-          disabled={isExporting !== null}
-          variant="outline"
-        >
-          <Download className="h-4 w-4 mr-2" />
-          {isExporting === 'contacts' ? 'Exporting...' : 'Export Contacts to CSV'}
-        </Button>
+      {/* Export buttons and How to use */}
+      <div className="flex justify-between items-center px-6 pt-4">
+        <div className="flex gap-2">
+          <Button
+            onClick={handleExportCompanies}
+            disabled={isExporting !== null}
+            variant="outline"
+          >
+            <Download className="h-4 w-4 mr-2" />
+            {isExporting === 'companies' ? 'Exporting...' : 'Export Companies to CSV'}
+          </Button>
+          <Button
+            onClick={handleExportContacts}
+            disabled={isExporting !== null}
+            variant="outline"
+          >
+            <Download className="h-4 w-4 mr-2" />
+            {isExporting === 'contacts' ? 'Exporting...' : 'Export Contacts to CSV'}
+          </Button>
+        </div>
+        
+        <Dialog>
+          <DialogTrigger asChild>
+            <Button variant="outline">
+              <HelpCircle className="h-4 w-4 mr-2" />
+              How to use
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>How to Use the Dashboard</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-6">
+              <div>
+                <h3 className="font-semibold mb-2">Sending Pictures</h3>
+                <p className="text-sm text-muted-foreground">
+                  Send up to five images to <a href="mailto:vehicles@izzy.fish" className="text-blue-600 hover:text-blue-800 transition-colors duration-200 hover:underline">vehicles@izzy.fish</a> as an attachment. It will accept .jpg, .png, .heic, .mp4, and .mov file types. If you need to submit more than five pictures, email me and I can submit them as a batch.
+                </p>
+              </div>
+              
+              <div>
+                <h3 className="font-semibold mb-3">Status Key</h3>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3">
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                      enriching
+                    </span>
+                    <span className="text-sm text-muted-foreground">Company data is being enriched with real contact info</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                      generating email
+                    </span>
+                    <span className="text-sm text-muted-foreground">Email content is being generated</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                      ready to send
+                    </span>
+                    <span className="text-sm text-muted-foreground">Ready for outreach</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                      sent
+                    </span>
+                    <span className="text-sm text-muted-foreground">Outreach has been completed</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div>
+                <h3 className="font-semibold mb-2">Questions?</h3>
+                <p className="text-sm text-muted-foreground">
+                  Email me: <a href="mailto:vehicles@izzy.fish" className="text-blue-600 hover:text-blue-800 transition-colors duration-200 hover:underline">izzylerman14@gmail.com</a>
+                </p>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <div className="rounded-md border">
@@ -283,7 +386,14 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {companies.map((company) => (
+          {isLoading ? (
+            <TableRow>
+              <TableCell colSpan={9} className="text-center py-8">
+                Loading...
+              </TableCell>
+            </TableRow>
+          ) : (
+            paginatedData.data.map((company) => (
             <React.Fragment key={company.id}>
               <TableRow className="cursor-pointer">
                 <TableCell>
@@ -410,16 +520,26 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                 </TableRow>
               ))}
             </React.Fragment>
-          ))}
+          ))
+          )}
         </TableBody>
         </Table>
         
-        {companies.length === 0 && (
+        {!isLoading && paginatedData.data.length === 0 && (
           <div className="text-center py-8 text-muted-foreground">
             No companies found
           </div>
         )}
       </div>
+
+      {/* Pagination */}
+      {!isLoading && paginatedData.totalPages > 1 && (
+        <Pagination
+          currentPage={paginatedData.currentPage}
+          totalPages={paginatedData.totalPages}
+          onPageChange={handlePageChange}
+        />
+      )}
     </div>
   )
 }

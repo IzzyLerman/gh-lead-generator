@@ -1,4 +1,4 @@
-import { createClient } from '@/utils/supabase/server'
+import { createClient } from '@/utils/supabase/client'
 import { Tables } from '@/types/database'
 
 export type CompanyWithContactsAndPhotos = Tables<'companies'> & {
@@ -22,7 +22,7 @@ export interface PaginatedResult<T> {
 export async function fetchCompaniesWithContactsAndPhotos(
   params: PaginationParams = {}
 ): Promise<PaginatedResult<CompanyWithContactsAndPhotos>> {
-  const supabase = await createClient()
+  const supabase = createClient()
   const { page = 1, pageSize = 10 } = params
   
   const from = (page - 1) * pageSize
@@ -66,10 +66,4 @@ export async function fetchCompaniesWithContactsAndPhotos(
     currentPage: page,
     pageSize
   }
-}
-
-// Keep the original function for backward compatibility
-export async function fetchCompaniesWithContacts(): Promise<CompanyWithContactsAndPhotos[]> {
-  const result = await fetchCompaniesWithContactsAndPhotos()
-  return result.data
 }
