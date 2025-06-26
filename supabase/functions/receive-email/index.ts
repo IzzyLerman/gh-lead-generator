@@ -355,6 +355,36 @@ async function uploadFileToStorage(supabase: SupabaseClient<Database>, file: Fil
   return data;
 }
 
+function convertDMSToDD(dmsArray: any[], direction: string): number {
+  // DMS array format: [degrees, minutes, seconds]
+  // Values might be fractions like "6/1" or "123/10"
+  
+  function parseValue(value: any): number {
+    if (typeof value === 'number') {
+      return value;
+    }
+    if (typeof value === 'string' && value.includes('/')) {
+      const [numerator, denominator] = value.split('/').map(Number);
+      return denominator ? numerator / denominator : 0;
+    }
+    return parseFloat(value) || 0;
+  }
+  
+  const degrees = parseValue(dmsArray[0]);
+  const minutes = parseValue(dmsArray[1]); 
+  const seconds = parseValue(dmsArray[2]);
+  
+  // Convert to decimal degrees
+  let dd = degrees + (minutes / 60) + (seconds / 3600);
+  
+  // Apply direction (negative for South and West)
+  if (direction === 'S' || direction === 'W' || direction === 'South' || direction === 'West') {
+    dd = -dd;
+  }
+  
+  return dd;
+}
+
 async function extractLocationFromExif(file: File): Promise<string | null> {
   try {
     // Check if file is an image format that can contain EXIF data
@@ -371,32 +401,56 @@ async function extractLocationFromExif(file: File): Promise<string | null> {
       expanded: false
     });
     
+    // Log all EXIF tags for debugging
+    log(`=== ALL EXIF TAGS for ${file.name || 'unknown file'} ===`);
+    Object.entries(tags).forEach(([key, value]) => {
+      const tagValue = typeof value === 'object' && value !== null ? JSON.stringify(value, null, 2) : value;
+      log(`${key}: ${tagValue}`);
+    });
+    log(`=== END EXIF TAGS ===`);
+    
     // Extract GPS coordinates if available
     const gpsLat = tags.GPSLatitude;
     const gpsLatRef = tags.GPSLatitudeRef;
     const gpsLon = tags.GPSLongitude;
     const gpsLonRef = tags.GPSLongitudeRef;
+    
+    // Log detailed GPS data for debugging
+    log(`=== GPS DATA DETAILS ===`);
+    log(`GPSLatitude raw:`, JSON.stringify(gpsLat, null, 2));
+    log(`GPSLatitudeRef raw:`, JSON.stringify(gpsLatRef, null, 2));
+    log(`GPSLongitude raw:`, JSON.stringify(gpsLon, null, 2));
+    log(`GPSLongitudeRef raw:`, JSON.stringify(gpsLonRef, null, 2));
+    log(`=== END GPS DATA ===`);
 
     if (gpsLat && gpsLatRef && gpsLon && gpsLonRef) {
       try {
         // Use the pre-processed description values from ExifReader
         const latDescription = gpsLat.description;
         const lonDescription = gpsLon.description;
-        const latRef = gpsLatRef.description || gpsLatRef.value;
-        const lonRef = gpsLonRef.description || gpsLonRef.value;
+        const latRef = gpsLatRef.value[0];
+        const lonRef = gpsLonRef.value[0];
 
         if (latDescription && lonDescription && latRef && lonRef) {
           // Parse the decimal degrees from description
           const lat = parseFloat(latDescription);
           const lon = parseFloat(lonDescription);
+          
+          log(`=== COORDINATE CONVERSION ===`);
+          log(`Raw descriptions: lat="${latDescription}", lon="${lonDescription}"`);
+          log(`Parsed floats: lat=${lat}, lon=${lon}`);
+          log(`Direction refs: latRef="${latRef}", lonRef="${lonRef}"`);
 
           if (!isNaN(lat) && !isNaN(lon)) {
             // Apply direction (negative for South and West)
             const finalLat = (latRef === 'S' || latRef === 'South') ? -lat : lat;
             const finalLon = (lonRef === 'W' || lonRef === 'West') ? -lon : lon;
             
+            log(`Final coordinates: lat=${finalLat}, lon=${finalLon}`);
+            
             const locationString = `${finalLat.toFixed(6)}, ${finalLon.toFixed(6)}`;
-            log(`EXIF location found: ${locationString}`);
+            log(`Final location string: ${locationString}`);
+            log(`=== END COORDINATE CONVERSION ===`);
             return locationString;
           } else {
             log(`Could not parse GPS coordinates from descriptions: lat=${latDescription}, lon=${lonDescription}`);
