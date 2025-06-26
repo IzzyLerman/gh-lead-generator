@@ -16,12 +16,16 @@ function getEnvVar(key) {
     return value;
 }
 
-async function generateAuthHeaders(attachments) {
+async function generateAuthHeaders(attachments, senderEmail = 'test@example.com') {
     const timestamp = Math.floor(Date.now() / 1000).toString();
     const webhookSecret = getEnvVar('WEBHOOK_SECRET');
     
     // Recreate the signature payload that matches the receive-email function
     const signaturePayloads = [];
+    
+    // Include sender email in signature
+    const senderEmailBuffer = Buffer.from(senderEmail, 'utf8');
+    signaturePayloads.push(senderEmailBuffer);
     
     for (const attachment of attachments) {
         // Include filename and content type in signature for security (matching Lambda logic)
@@ -62,11 +66,28 @@ function loadFile(filePath) {
 
 async function main() {
     try {
-        const filePaths = process.argv.slice(2);
+        const args = process.argv.slice(2);
+        
+        if (args.length === 0) {
+            console.error('Usage: node generate-signature.js [--sender-email=email] <file1> [file2] [file3] ...');
+            console.error('Example: node generate-signature.js --sender-email=test@company.com path/to/image1.jpg path/to/image2.png');
+            process.exit(1);
+        }
+        
+        // Parse sender email and file paths
+        let senderEmail = 'test@example.com';
+        let filePaths = [];
+        
+        for (const arg of args) {
+            if (arg.startsWith('--sender-email=')) {
+                senderEmail = arg.split('=')[1];
+            } else {
+                filePaths.push(arg);
+            }
+        }
         
         if (filePaths.length === 0) {
-            console.error('Usage: node generate-signature.js <file1> [file2] [file3] ...');
-            console.error('Example: node generate-signature.js path/to/image1.jpg path/to/image2.png');
+            console.error('Error: At least one file path is required');
             process.exit(1);
         }
         
@@ -74,7 +95,7 @@ async function main() {
         const attachments = filePaths.map(loadFile);
         
         // Generate auth headers
-        const { timestamp, signature } = await generateAuthHeaders(attachments);
+        const { timestamp, signature } = await generateAuthHeaders(attachments, senderEmail);
         
         // Get the receive email URL from environment
         const receiveEmailUrl = getEnvVar('RECEIVE_EMAIL_URL');
@@ -83,6 +104,7 @@ async function main() {
         console.log('Generated headers:');
         console.log(`X-Timestamp: ${timestamp}`);
         console.log(`X-Signature: ${signature}`);
+        console.log(`Sender Email: ${senderEmail}`);
         console.log('');
         
         console.log('Complete curl command:');
@@ -90,6 +112,7 @@ async function main() {
         console.log(`  "${receiveEmailUrl}" \\`);
         console.log(`  -H "X-Timestamp: ${timestamp}" \\`);
         console.log(`  -H "X-Signature: ${signature}" \\`);
+        console.log(`  -F "sender_email=${senderEmail}" \\`);
         
         // Add form data for each file
         for (const filePath of filePaths) {

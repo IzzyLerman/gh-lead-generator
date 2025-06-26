@@ -16,7 +16,7 @@ SELECT lives_ok(
 
 -- Test 3: Verify companies CSV contains header row
 SELECT ok(
-    (SELECT private.export_companies_csv() LIKE 'name,industry,primary_email,email_list,primary_phone,phone_list,city,state,status,group%'),
+    (SELECT private.export_companies_csv() LIKE 'name,industry,email_list,phone_list,city,state,status,group%'),
     'Companies CSV should start with proper header row'
 );
 
@@ -46,8 +46,8 @@ SELECT ok(
 
 -- Test 8: Verify CSV quoting for fields that might contain commas or quotes
 -- Insert a test company with problematic data for CSV
-INSERT INTO public.companies (name, industry, city, state, primary_email) 
-VALUES ('Test, Company "Quotes"', ARRAY['Service, Support', 'Tech "Solutions"'], 'San Francisco', 'CA', 'test@example.com');
+INSERT INTO public.companies (name, industry, city, state, email) 
+VALUES ('Test, Company "Quotes"', ARRAY['Service, Support', 'Tech "Solutions"'], 'San Francisco', 'CA', ARRAY['test@example.com']);
 
 -- Also insert a test contact for this company to test the contacts export includes company name
 INSERT INTO public.contacts (name, title, email, phone, company_id)

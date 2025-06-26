@@ -65,8 +65,12 @@ async function parseEmailAndExtractAttachments(emailBuffer) {
     log(`Email parsed. Subject: ${parsed.subject}`);
     log(`Attachments found: ${parsed.attachments ? parsed.attachments.length : 0}`);
     
+    // Extract sender email address
+    const senderEmail = parsed.from?.value?.[0]?.address || parsed.from?.text || 'unknown';
+    log(`Sender: ${senderEmail}`);
+    
     if (!parsed.attachments || parsed.attachments.length === 0) {
-      return [];
+      return { attachments: [], senderEmail };
     }
     
     // Filter for supported image/video types and limit to 5
@@ -108,18 +112,21 @@ async function parseEmailAndExtractAttachments(emailBuffer) {
     
     log(`Filtered attachments: ${supportedAttachments.length}`);
     
-    return supportedAttachments.map(attachment => ({
-      filename: attachment.filename || `attachment_${Date.now()}`,
-      contentType: attachment.contentType,
-      content: attachment.content
-    }));
+    return {
+      attachments: supportedAttachments.map(attachment => ({
+        filename: attachment.filename || `attachment_${Date.now()}`,
+        contentType: attachment.contentType,
+        content: attachment.content
+      })),
+      senderEmail
+    };
   } catch (error) {
     log(`Error parsing email: ${error.message}`);
     throw error;
   }
 }
 
-async function sendAttachmentsToEndpoint(attachments, receiveEmailUrl, webhookSecret) {
+async function sendAttachmentsToEndpoint(attachments, senderEmail, receiveEmailUrl, webhookSecret) {
   try {
     if (attachments.length === 0) {
       log('No attachments to send');
@@ -131,10 +138,14 @@ async function sendAttachmentsToEndpoint(attachments, receiveEmailUrl, webhookSe
     const formData = new FormData();
     let headers = {};
     
+    // Add sender email to form data
+    formData.append('sender_email', senderEmail);
+    log(`Adding sender email: ${senderEmail}`);
+    
     // Combined loop for FormData creation and signature payload building
     if (webhookSecret) {
       const timestamp = Math.floor(Date.now() / 1000);
-      let signaturePayload = Buffer.alloc(0);
+      let signaturePayload = Buffer.from(senderEmail); // Include sender email in signature
       
       attachments.forEach((attachment, index) => {
         log(`Adding attachment ${index + 1}: ${attachment.filename} (${attachment.contentType})`);
@@ -214,7 +225,7 @@ exports.handler = async (event, context) => {
       
       const emailBuffer = await readEmailFromS3(bucketName, objectKey);
       
-      const attachments = await parseEmailAndExtractAttachments(emailBuffer);
+      const { attachments, senderEmail } = await parseEmailAndExtractAttachments(emailBuffer);
       
       if (attachments.length === 0) {
         log('No supported attachments found in email');
@@ -227,7 +238,7 @@ exports.handler = async (event, context) => {
         };
       }
       
-      const result = await sendAttachmentsToEndpoint(attachments, RECEIVE_EMAIL_URL, WEBHOOK_SECRET);
+      const result = await sendAttachmentsToEndpoint(attachments, senderEmail, RECEIVE_EMAIL_URL, WEBHOOK_SECRET);
       
       return {
         statusCode: 200,
@@ -242,8 +253,8 @@ exports.handler = async (event, context) => {
     // Handle direct invocation for testing
     if (event.testEmail) {
       const emailBuffer = Buffer.from(event.testEmail, 'base64');
-      const attachments = await parseEmailAndExtractAttachments(emailBuffer);
-      const result = await sendAttachmentsToEndpoint(attachments, RECEIVE_EMAIL_URL, WEBHOOK_SECRET);
+      const { attachments, senderEmail } = await parseEmailAndExtractAttachments(emailBuffer);
+      const result = await sendAttachmentsToEndpoint(attachments, senderEmail, RECEIVE_EMAIL_URL, WEBHOOK_SECRET);
       
       return {
         statusCode: 200,

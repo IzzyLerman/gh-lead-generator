@@ -331,30 +331,53 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
               
               <div>
                 <h3 className="font-semibold mb-3">Status Key</h3>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-3">
-                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                      enriching
-                    </span>
-                    <span className="text-sm text-muted-foreground">Company data is being enriched with real contact info</span>
+                <div className="space-y-3">
+                  <div>
+                    <h4 className="font-medium text-sm mb-2">Company Statuses</h4>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-3">
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                          Finding Contacts
+                        </span>
+                        <span className="text-sm text-muted-foreground">Working on gathering contact info for the company</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                          Pending
+                        </span>
+                        <span className="text-sm text-muted-foreground">Ready for outreach decision</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                          Not Interested
+                        </span>
+                        <span className="text-sm text-muted-foreground">Company marked as not interested</span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                      generating email
-                    </span>
-                    <span className="text-sm text-muted-foreground">Email content is being generated</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                      ready to send
-                    </span>
-                    <span className="text-sm text-muted-foreground">Ready for outreach</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                      sent
-                    </span>
-                    <span className="text-sm text-muted-foreground">Outreach has been completed</span>
+                  
+                  <div>
+                    <h4 className="font-medium text-sm mb-2">Contact Statuses</h4>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-3">
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          Generating Email
+                        </span>
+                        <span className="text-sm text-muted-foreground">Automatically generating a personalized outreach email</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                          Ready to Send
+                        </span>
+                        <span className="text-sm text-muted-foreground">Email ready for review and sending</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          Sent
+                        </span>
+                        <span className="text-sm text-muted-foreground">Outreach has been completed</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -381,14 +404,15 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
             <TableHead>Contact</TableHead>
             <TableHead>Photos</TableHead>
             <TableHead>Status</TableHead>
-            <TableHead>Messages</TableHead>
+            <TableHead>Message</TableHead>
+            <TableHead>Submitted By</TableHead>
             <TableHead>Created</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {isLoading ? (
             <TableRow>
-              <TableCell colSpan={9} className="text-center py-8">
+              <TableCell colSpan={10} className="text-center py-8">
                 Loading...
               </TableCell>
             </TableRow>
@@ -430,16 +454,16 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                 </TableCell>
                 <TableCell>
                   <div className="space-y-1 text-sm">
-                    {company.primary_email && (
+                    {company.email && company.email.length > 0 && (
                       <div className="flex items-center gap-1">
                         <Mail className="h-3 w-3" />
-                        {company.primary_email}
+                        {company.email[0]}
                       </div>
                     )}
-                    {company.primary_phone && (
+                    {company.phone && company.phone.length > 0 && (
                       <div className="flex items-center gap-1">
                         <Phone className="h-3 w-3" />
-                        {company.primary_phone}
+                        {company.phone[0]}
                       </div>
                     )}
                   </div>
@@ -454,32 +478,38 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                   <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
                     company.status === 'enriching' 
                       ? 'bg-yellow-100 text-yellow-800' 
-                      : company.status === 'generating_email'
-                      ? 'bg-blue-100 text-blue-800'
-                      : company.status === 'ready_to_send'
+                      : company.status === 'pending'
                       ? 'bg-orange-100 text-orange-800'
-                      : company.status === 'completed'
-                      ? 'bg-green-100 text-green-800'
+                      : company.status === 'not_interested'
+                      ? 'bg-red-100 text-red-800'
                       : 'bg-gray-100 text-gray-800'
                   }`}>
-                    {company.status === 'generating_email' ? 'Generating Email' 
-                      : company.status === 'ready_to_send' ? 'Ready to Send'
-                      : company.status || 'unknown'}
+                    {company.status === 'enriching' ? 'Finding Contacts' 
+                      : company.status === 'pending' ? 'Pending'
+                      : company.status === 'not_interested' ? 'Not Interested'
+                      : 'Finding Contacts'}
                   </span>
                 </TableCell>
                 <TableCell className="max-w-xs">
                   <div className="space-y-1 text-sm">
-                    {company.email_message && (
-                      <div className="truncate text-muted-foreground" title={company.email_message}>
-                        <span className="font-medium">Email:</span> {company.email_message}
-                      </div>
+                    {company.contacts.some(contact => contact.message) ? (
+                      company.contacts.filter(contact => contact.message).map(contact => (
+                        <div key={contact.id} className="truncate text-muted-foreground" title={contact.message || ''}>
+                          {contact.name || 'Contact'}: {contact.message}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-muted-foreground">-</div>
                     )}
-                    {company.text_message && (
-                      <div className="truncate text-muted-foreground" title={company.text_message}>
-                        <span className="font-medium">Text:</span> {company.text_message}
+                  </div>
+                </TableCell>
+                <TableCell className="max-w-xs">
+                  <div className="space-y-1 text-sm">
+                    {company['vehicle-photos'] && company['vehicle-photos'].length > 0 && company['vehicle-photos'][0].submitted_by ? (
+                      <div className="truncate text-muted-foreground" title={company['vehicle-photos'][0].submitted_by}>
+                        {company['vehicle-photos'][0].submitted_by}
                       </div>
-                    )}
-                    {!company.email_message && !company.text_message && (
+                    ) : (
                       <div className="text-muted-foreground">-</div>
                     )}
                   </div>
@@ -517,8 +547,22 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                       )}
                     </div>
                   </TableCell>
-                  <TableCell></TableCell>
-                  <TableCell></TableCell>
+                  <TableCell>
+                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                      contact.status === 'generating_email' 
+                        ? 'bg-blue-100 text-blue-800' 
+                        : contact.status === 'ready_to_send'
+                        ? 'bg-orange-100 text-orange-800'
+                        : contact.status === 'sent'
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      {contact.status === 'generating_email' ? 'Generating Email' 
+                        : contact.status === 'ready_to_send' ? 'Ready to Send'
+                        : contact.status === 'sent' ? 'Sent'
+                        : 'Generating Email'}
+                    </span>
+                  </TableCell>
                   <TableCell>
                     <div className="max-w-xs">
                       <div className="space-y-1 text-sm">
@@ -533,6 +577,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                       </div>
                     </div>
                   </TableCell>
+                  <TableCell></TableCell>
                   <TableCell className="text-muted-foreground text-sm">
                     {formatDate(contact.created_at)}
                   </TableCell>

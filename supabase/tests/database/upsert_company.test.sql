@@ -40,7 +40,7 @@ SELECT lives_ok(
 );
 
 -- Test 6: Test email matching when name doesn't match
-INSERT INTO public.companies (name, primary_email, email) VALUES ('Different Name', 'unique@test.com', ARRAY['unique@test.com']);
+INSERT INTO public.companies (name, email) VALUES ('Different Name', ARRAY['unique@test.com']);
 
 SELECT lives_ok(
     $$ SELECT private.upsert_company('Another Name', 'unique@test.com', '123-456-7890', ARRAY['Finance'], 'NYC', 'NY') $$,
@@ -48,13 +48,13 @@ SELECT lives_ok(
 );
 
 SELECT is(
-    (SELECT phone[1] FROM public.companies WHERE primary_email = 'unique@test.com'),
+    (SELECT phone[1] FROM public.companies WHERE 'unique@test.com' = ANY(email)),
     '123-456-7890',
     'Should update company matched by email'
 );
 
 -- Test 7: Test phone matching when name and email don't match
-INSERT INTO public.companies (name, primary_phone, phone) VALUES ('Phone Company', '555-000-1111', ARRAY['555-000-1111']);
+INSERT INTO public.companies (name, phone) VALUES ('Phone Company', ARRAY['555-000-1111']);
 
 SELECT lives_ok(
     $$ SELECT private.upsert_company('Phone Match Test', 'newphone@test.com', '(555) 000-1111', ARRAY['Telecom'], 'Boston', 'MA') $$,
@@ -62,7 +62,7 @@ SELECT lives_ok(
 );
 
 SELECT is(
-    (SELECT primary_email FROM public.companies WHERE name = 'Phone Company'),
+    (SELECT email[1] FROM public.companies WHERE name = 'Phone Company'),
     'newphone@test.com',
     'Should update company matched by phone'
 );

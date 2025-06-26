@@ -84,7 +84,7 @@ export type Database = {
           p_city: string
           p_state: string
         }
-        Returns: undefined
+        Returns: string
       }
     }
     Enums: {
@@ -101,51 +101,39 @@ export type Database = {
           city: string | null
           created_at: string | null
           email: string[] | null
-          email_message: string | null
           group: string | null
           id: string
           industry: string[] | null
           name: string
           phone: string[] | null
-          primary_email: string | null
-          primary_phone: string | null
           state: string | null
           status: string | null
-          text_message: string | null
           updated_at: string | null
         }
         Insert: {
           city?: string | null
           created_at?: string | null
           email?: string[] | null
-          email_message?: string | null
           group?: string | null
           id?: string
           industry?: string[] | null
           name: string
           phone?: string[] | null
-          primary_email?: string | null
-          primary_phone?: string | null
           state?: string | null
           status?: string | null
-          text_message?: string | null
           updated_at?: string | null
         }
         Update: {
           city?: string | null
           created_at?: string | null
           email?: string[] | null
-          email_message?: string | null
           group?: string | null
           id?: string
           industry?: string[] | null
           name?: string
           phone?: string[] | null
-          primary_email?: string | null
-          primary_phone?: string | null
           state?: string | null
           status?: string | null
-          text_message?: string | null
           updated_at?: string | null
         }
         Relationships: []
@@ -159,6 +147,7 @@ export type Database = {
           message: string | null
           name: string | null
           phone: string | null
+          status: string | null
           title: string | null
           updated_at: string | null
         }
@@ -170,6 +159,7 @@ export type Database = {
           message?: string | null
           name?: string | null
           phone?: string | null
+          status?: string | null
           title?: string | null
           updated_at?: string | null
         }
@@ -181,6 +171,7 @@ export type Database = {
           message?: string | null
           name?: string | null
           phone?: string | null
+          status?: string | null
           title?: string | null
           updated_at?: string | null
         }
@@ -217,22 +208,28 @@ export type Database = {
           company_id: string | null
           created_at: string | null
           id: number
+          location: string | null
           name: string | null
           status: string | null
+          submitted_by: string | null
         }
         Insert: {
           company_id?: string | null
           created_at?: string | null
           id?: number
+          location?: string | null
           name?: string | null
           status?: string | null
+          submitted_by?: string | null
         }
         Update: {
           company_id?: string | null
           created_at?: string | null
           id?: number
+          location?: string | null
           name?: string | null
           status?: string | null
+          submitted_by?: string | null
         }
         Relationships: [
           {

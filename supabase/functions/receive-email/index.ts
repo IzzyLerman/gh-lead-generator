@@ -76,7 +76,7 @@ async function verifySignature(body: ArrayBuffer, timestamp: string, signature: 
   }
 }
 
-async function verifyContentBasedSignature(attachments: File[], timestamp: string, signature: string, secret: string): Promise<boolean> {
+async function verifyContentBasedSignature(attachments: File[], senderEmail: string, timestamp: string, signature: string, secret: string): Promise<boolean> {
   try {
     const timeLimit = 5 * 60 * 1000; // 5 minutes
     const now = Date.now();
@@ -89,6 +89,9 @@ async function verifyContentBasedSignature(attachments: File[], timestamp: strin
     
     // Recreate the signature payload that matches the Lambda function
     const signaturePayloads: Uint8Array[] = [];
+    
+    // Include sender email in signature payload to match lambda function
+    signaturePayloads.push(new TextEncoder().encode(senderEmail));
     
     for (const attachment of attachments) {
       // Include filename and content type in signature for security (matching Lambda logic)
@@ -331,6 +334,29 @@ async function uploadFileToStorage(supabase: SupabaseClient<Database>, file: Fil
   return data;
 }
 
+async function uploadFileAndCreateRecord(supabase: SupabaseClient<Database>, file: File, filename: string, senderEmail: string) {
+  // Upload to storage first
+  const uploadData = await uploadFileToStorage(supabase, file, filename);
+  
+  // Create record in vehicle-photos table with sender email
+  const { error: insertError } = await supabase
+    .from("vehicle-photos")
+    .upsert({
+      name: uploadData.path,
+      submitted_by: senderEmail,
+      status: 'unprocessed'
+    }, {
+      onConflict: 'name'
+    });
+    
+  if (insertError) {
+    log(`Error inserting vehicle-photos record: ${JSON.stringify(insertError)}`);
+    throw new Error(`Failed to insert vehicle-photos record: ${insertError.message || JSON.stringify(insertError)}`);
+  }
+  
+  return uploadData;
+}
+
 export async function enqueueImageJob(pgmq_public: SupabaseClient<Database, 'pgmq_public'>, imagePath: string): Promise<number[]> {
   const { data } = await pgmq_public.rpc("send", {
     queue_name: "image-processing",
@@ -353,6 +379,7 @@ export async function triggerWorker(supabase: SupabaseClient<Database>) {
 
 async function processAttachments(
   attachments: File[],
+  senderEmail: string,
   supabase: SupabaseClient<Database>,
   pgmq_public: SupabaseClient<Database, 'pgmq_public'>,
   enqueue: typeof enqueueImageJob,
@@ -376,8 +403,8 @@ async function processAttachments(
       const processedFile = await processFileForVision(file, videoFrameExtractor);
       const filename = generateUniqueFilename(processedFile.name);
       log(`Uploading file as ${filename}`);
-      const uploadData = await uploadFileToStorage(supabase, processedFile, filename);
-      log(`File uploaded: ${uploadData.path}`);
+      const uploadData = await uploadFileAndCreateRecord(supabase, processedFile, filename, senderEmail);
+      log(`File uploaded and record created: ${uploadData.path}`);
       uploadedPaths.push(uploadData.path);
       
       await enqueue(pgmq_public, uploadData.path);
@@ -481,6 +508,7 @@ export const handler = async (
     // Parse form data first to extract attachments for content-based signature
     const formData = await req.formData();
     const attachmentEntries = formData.getAll("attachments[]");
+    const senderEmail = formData.get("sender_email")?.toString() || 'unknown';
     const attachments: File[] = [];
     
     for (const entry of attachmentEntries) {
@@ -490,7 +518,7 @@ export const handler = async (
     }
     
     // Use content-based signature verification instead of FormData body
-    const isValid = await verifyContentBasedSignature(attachments, timestamp, signature, webhookSecret);
+    const isValid = await verifyContentBasedSignature(attachments, senderEmail, timestamp, signature, webhookSecret);
     
     if (!isValid) {
       log('Invalid signature or timestamp');
@@ -500,7 +528,7 @@ export const handler = async (
       });
     }
     
-    return await processAttachments(attachments, supabase, pgmq_public, enqueue, videoFrameExtractor);
+    return await processAttachments(attachments, senderEmail, supabase, pgmq_public, enqueue, videoFrameExtractor);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     log(`Error: ${errorMessage}`);

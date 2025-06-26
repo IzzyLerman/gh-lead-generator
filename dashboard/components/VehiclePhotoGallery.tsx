@@ -164,6 +164,16 @@ export function VehiclePhotoGallery({ photos, companyName }: VehiclePhotoGallery
                   className="w-auto h-auto max-w-full max-h-full object-contain"
                 />
               </div>
+              {selectedPhoto.location && (
+                <div className="text-center text-sm text-muted-foreground">
+                  <strong>Location:</strong> {selectedPhoto.location}
+                </div>
+              )}
+              {selectedPhoto.submitted_by && (
+                <div className="text-center text-sm text-muted-foreground">
+                  <strong>Submitted by:</strong> {selectedPhoto.submitted_by}
+                </div>
+              )}
               <div className="flex gap-2">
                 <Button
                   onClick={() => handleOpenInNewTab(selectedPhoto)}

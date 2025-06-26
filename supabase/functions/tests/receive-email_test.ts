@@ -35,11 +35,23 @@ function createMockFile(name: string, type: string, size: number): File {
     return new File([buffer], name, { type });
 }
 
-async function generateAuthHeaders(attachments: File[]): Promise<{timestamp: string, signature: string}> {
+function createFormDataWithSender(files: File[], senderEmail: string = 'test@example.com'): FormData {
+    const formData = new FormData();
+    formData.append("sender_email", senderEmail);
+    for (const file of files) {
+        formData.append("attachments[]", file);
+    }
+    return formData;
+}
+
+async function generateAuthHeaders(attachments: File[], senderEmail: string = 'test@example.com'): Promise<{timestamp: string, signature: string}> {
     const timestamp = Math.floor(Date.now() / 1000).toString();
     
     // Recreate the signature payload that matches the Lambda function
     const signaturePayloads: Uint8Array[] = [];
+    
+    // Include sender email in signature payload to match lambda function
+    signaturePayloads.push(new TextEncoder().encode(senderEmail));
     
     for (const attachment of attachments) {
         // Include filename and content type in signature for security (matching Lambda logic)
@@ -101,8 +113,7 @@ async function mockExtractVideoFrame(videoFile: File): Promise<File> {
 
 _test("Valid PNG attachment is uploaded to bucket", async () => {
     const file = createMockFile("test-image.png", "image/png", 1 * 1024 * 1024); // 1MB
-    const formData = new FormData();
-    formData.append("attachments[]", file);
+    const formData = createFormDataWithSender([file]);
 
     const { timestamp, signature } = await generateAuthHeaders([file]);
     const request = new Request("https://fake-url.com/receive-email", {
@@ -142,8 +153,7 @@ _test("Valid PNG attachment is uploaded to bucket", async () => {
 
 _test("Valid JPG attachment is uploaded to bucket", async () => {
     const file = createMockFile("test-image.jpg", "image/jpeg", 2 * 1024 * 1024); // 2MB
-    const formData = new FormData();
-    formData.append("attachments[]", file);
+    const formData = createFormDataWithSender([file]);
 
     const { timestamp, signature } = await generateAuthHeaders([file]);
     const request = new Request("https://fake-url.com/receive-email", {
@@ -178,8 +188,7 @@ _test("Valid JPG attachment is uploaded to bucket", async () => {
 
 _test("Filename with no extension is handled", async () => {
     const file = createMockFile("image-no-ext", "image/png", 1024); // 1KB
-    const formData = new FormData();
-    formData.append("attachments[]", file);
+    const formData = createFormDataWithSender([file]);
 
     const { timestamp, signature } = await generateAuthHeaders([file]);
     const request = new Request("https://fake-url.com/receive-email", {
@@ -215,7 +224,7 @@ _test("Filename with no extension is handled", async () => {
 
 
 _test("Request with no attachments is handled", async () => {
-    const formData = new FormData();
+    const formData = createFormDataWithSender([]);
     
     const { timestamp, signature } = await generateAuthHeaders([]);
     const request = new Request("https://fake-url.com/receive-email", {
@@ -236,8 +245,7 @@ _test("Request with no attachments is handled", async () => {
 
 _test("Request with invalid-type attachments (.txt) is handled", async () => {
     const file = createMockFile("document.txt", "text/plain", 1024);
-    const formData = new FormData();
-    formData.append("attachments[]", file);
+    const formData = createFormDataWithSender([file]);
 
     const { timestamp, signature } = await generateAuthHeaders([file]);
     const request = new Request("https://fake-url.com/receive-email", {
@@ -260,8 +268,7 @@ _test("File too large is handled", async () => {
     const maxSize = 50 * 1024 * 1024;
     const oversize = maxSize + 1;
     const file = createMockFile("oversized-image.png", "image/png", oversize);
-    const formData = new FormData();
-    formData.append("attachments[]", file);
+    const formData = createFormDataWithSender([file]);
 
     const { timestamp, signature } = await generateAuthHeaders([file]);
     const request = new Request("https://fake-url.com/receive-email", {
@@ -281,15 +288,15 @@ _test("File too large is handled", async () => {
 });
 
 _test("Request with 5 attachments is processed correctly", async () => {
-    const formData = new FormData();
     const paths: string[] = [];
     const files: File[] = [];
     
     for (let i = 0; i < 5; i++) {
         const file = createMockFile(`test-image-${i}.png`, "image/png", 1024 * (i + 1));
-        formData.append("attachments[]", file);
         files.push(file);
     }
+    
+    const formData = createFormDataWithSender(files);
 
     const { timestamp, signature } = await generateAuthHeaders(files);
     const request = new Request("https://fake-url.com/receive-email", {
@@ -328,15 +335,15 @@ _test("Request with 5 attachments is processed correctly", async () => {
 });
 
 _test("Request with 6 attachments processes only first 5", async () => {
-    const formData = new FormData();
     const paths: string[] = [];
     const files: File[] = [];
     
     for (let i = 0; i < 6; i++) {
         const file = createMockFile(`test-image-${i}.png`, "image/png", 1024 * (i + 1));
-        formData.append("attachments[]", file);
         files.push(file);
     }
+    
+    const formData = createFormDataWithSender(files);
 
     const { timestamp, signature } = await generateAuthHeaders(files);
     const request = new Request("https://fake-url.com/receive-email", {
@@ -377,8 +384,7 @@ _test("Request with 6 attachments processes only first 5", async () => {
 _test("HEIC attachment is converted to JPG and uploaded", async () => {
     const heicData = await Deno.readFile("./supabase/functions/tests/img/ex.heic");
     const file = new File([heicData], "ex.heic", { type: "image/heic" });
-    const formData = new FormData();
-    formData.append("attachments[]", file);
+    const formData = createFormDataWithSender([file]);
 
     const { timestamp, signature } = await generateAuthHeaders([file]);
     const request = new Request("https://fake-url.com/receive-email", {
@@ -421,8 +427,7 @@ _test("HEIC attachment is converted to JPG and uploaded", async () => {
 _test("MP4 video frame extraction works correctly", async () => {
     const mp4Data = await Deno.readFile("./supabase/functions/tests/img/big_buck_bunny.mp4");
     const file = new File([mp4Data], "big_buck_bunny.mp4", { type: "video/mp4" });
-    const formData = new FormData();
-    formData.append("attachments[]", file);
+    const formData = createFormDataWithSender([file]);
 
     const { timestamp, signature } = await generateAuthHeaders([file]);
     const request = new Request("https://fake-url.com/receive-email", {
