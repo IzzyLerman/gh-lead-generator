@@ -327,6 +327,12 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                 <p className="text-sm text-muted-foreground">
                   Email up to five images to <a href="mailto:vehicles@izzy.fish" className="text-blue-600 hover:text-blue-800 transition-colors duration-200 hover:underline">vehicles@izzy.fish</a> as an attachment. It will accept .jpg, .png, .heic, .mp4, and .mov file types. If you need to submit more than five pictures, message me and I can submit them as a batch.
                 </p>
+	      </div>
+	      <div>
+                <h3 className="font-semibold mb-2">Outreach</h3>
+		<p className="text-sm text-muted-foreground">
+		  For now, I'm doing the outreach manually, and I'll update the statuses accordingly.
+		</p>
               </div>
               
               <div>
@@ -491,17 +497,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                   </span>
                 </TableCell>
                 <TableCell className="max-w-xs">
-                  <div className="space-y-1 text-sm">
-                    {company.contacts.some(contact => contact.message) ? (
-                      company.contacts.filter(contact => contact.message).map(contact => (
-                        <div key={contact.id} className="truncate text-muted-foreground" title={contact.message || ''}>
-                          {contact.name || 'Contact'}: {contact.message}
-                        </div>
-                      ))
-                    ) : (
-                      <div className="text-muted-foreground">-</div>
-                    )}
-                  </div>
+                  <div className="text-muted-foreground">-</div>
                 </TableCell>
                 <TableCell className="max-w-xs">
                   <div className="space-y-1 text-sm">
@@ -547,6 +543,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                       )}
                     </div>
                   </TableCell>
+                  <TableCell></TableCell>
                   <TableCell>
                     <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
                       contact.status === 'generating_email' 
@@ -565,13 +562,12 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                   </TableCell>
                   <TableCell>
                     <div className="max-w-xs">
-                      <div className="space-y-1 text-sm">
-                        {contact.message && (
-                          <div className="truncate text-muted-foreground" title={contact.message}>
+                      <div className="text-sm">
+                        {contact.message ? (
+                          <div className="h-32 w-full overflow-y-auto bg-gray-50 border rounded p-2 text-muted-foreground text-xs leading-relaxed">
                             {contact.message}
                           </div>
-                        )}
-                        {!contact.message && (
+                        ) : (
                           <div className="text-muted-foreground">-</div>
                         )}
                       </div>
