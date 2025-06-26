@@ -331,7 +331,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
 	      <div>
                 <h3 className="font-semibold mb-2">Outreach</h3>
 		<p className="text-sm text-muted-foreground">
-		  For now, I'm doing the outreach manually, and I'll update the statuses accordingly.
+		  For now, I&#39;m doing the outreach manually and updating the statuses accordingly as I send them out.
 		</p>
               </div>
               
