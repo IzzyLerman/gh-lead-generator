@@ -325,7 +325,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
               <div>
                 <h3 className="font-semibold mb-2">Sending Pictures</h3>
                 <p className="text-sm text-muted-foreground">
-                  Email up to five images to <a href="mailto:vehicles@izzy.fish" className="text-blue-600 hover:text-blue-800 transition-colors duration-200 hover:underline">vehicles@izzy.fish</a> as an attachment. It will accept .jpg, .png, .heic, .mp4, and .mov file types. If you need to submit more than five pictures, message me and I can submit them as a batch.
+                  Email up to five images to <a href="mailto:vehicles@izzy.fish" className="text-blue-600 hover:text-blue-800 transition-colors duration-200 hover:underline">vehicles@izzy.fish</a> as attachments. It will accept .jpg, .png, .heic, .mp4, and .mov file types. If you need to submit more than five pictures, message me and I can submit them as a batch.
                 </p>
 	      </div>
 	      <div>

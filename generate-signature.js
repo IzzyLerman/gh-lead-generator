@@ -59,7 +59,23 @@ function loadFile(filePath) {
     
     const content = fs.readFileSync(filePath);
     const name = path.basename(filePath);
-    const type = mime.lookup(filePath) || 'application/octet-stream';
+    let type = mime.lookup(filePath) || 'application/octet-stream';
+    
+    // Normalize MIME type to match server-side logic for signature consistency
+    const fileName = name.toLowerCase();
+    if (fileName.endsWith('.heic') || fileName.endsWith('.heif')) {
+        type = 'image/heic';
+    } else if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) {
+        type = 'image/jpeg';
+    } else if (fileName.endsWith('.png')) {
+        type = 'image/png';
+    } else if (fileName.endsWith('.mp4')) {
+        type = 'video/mp4';
+    } else if (fileName.endsWith('.mov')) {
+        type = 'video/mov';
+    } else if (fileName.endsWith('.tiff') || fileName.endsWith('.tif')) {
+        type = 'image/tiff';
+    }
     
     return { name, type, content };
 }
@@ -93,6 +109,13 @@ async function main() {
         
         // Load all files
         const attachments = filePaths.map(loadFile);
+        
+        // Debug output for loaded files
+        console.log('Loaded files:');
+        attachments.forEach(att => {
+            console.log(`  - ${att.name}: ${att.type} (${att.content.length} bytes)`);
+        });
+        console.log('');
         
         // Generate auth headers
         const { timestamp, signature } = await generateAuthHeaders(attachments, senderEmail);

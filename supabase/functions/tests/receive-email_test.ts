@@ -111,6 +111,14 @@ async function mockExtractVideoFrame(videoFile: File): Promise<File> {
     return new File([mockFrameData], filename, { type: 'image/jpeg' });
 }
 
+async function mockReverseGeocode(lat: number, lon: number): Promise<string | null> {
+    // Return mock street address for testing
+    if (lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) {
+        return `${Math.abs(lat).toFixed(0)} Test Street, Mock City, MC ${Math.abs(lon).toFixed(0)}`;
+    }
+    return null;
+}
+
 _test("Valid PNG attachment is uploaded to bucket", async () => {
     const file = createMockFile("test-image.png", "image/png", 1 * 1024 * 1024); // 1MB
     const formData = createFormDataWithSender([file]);
@@ -127,7 +135,7 @@ _test("Valid PNG attachment is uploaded to bucket", async () => {
     
     let paths: string[] = [];
     try {
-        const response = await handler(request, {enqueueImageJob: mockEnqueue});
+        const response = await handler(request, {enqueueImageJob: mockEnqueue, reverseGeocode: mockReverseGeocode});
         const json = await response.json();
         paths = json.paths;
 
@@ -167,7 +175,7 @@ _test("Valid JPG attachment is uploaded to bucket", async () => {
 
     let paths: string[] = [];
     try {
-        const response = await handler(request, {enqueueImageJob: mockEnqueue});
+        const response = await handler(request, {enqueueImageJob: mockEnqueue, reverseGeocode: mockReverseGeocode});
         const json = await response.json();
         paths = json.paths;
 
@@ -202,7 +210,7 @@ _test("Filename with no extension is handled", async () => {
 
     let paths: string[] = [];
     try {
-        const response = await handler(request, {enqueueImageJob: mockEnqueue});
+        const response = await handler(request, {enqueueImageJob: mockEnqueue, reverseGeocode: mockReverseGeocode});
         const json = await response.json();
         paths = json.paths;
 
@@ -309,7 +317,7 @@ _test("Request with 5 attachments is processed correctly", async () => {
     });
 
     try {
-        const response = await handler(request, {enqueueImageJob: mockEnqueue});
+        const response = await handler(request, {enqueueImageJob: mockEnqueue, reverseGeocode: mockReverseGeocode});
         const json = await response.json();
 
         assertEquals(response.status, 200);
@@ -356,7 +364,7 @@ _test("Request with 6 attachments processes only first 5", async () => {
     });
 
     try {
-        const response = await handler(request, {enqueueImageJob: mockEnqueue});
+        const response = await handler(request, {enqueueImageJob: mockEnqueue, reverseGeocode: mockReverseGeocode});
         const json = await response.json();
 
         assertEquals(response.status, 200);
@@ -398,7 +406,7 @@ _test("HEIC attachment is converted to JPG and uploaded", async () => {
 
     let paths: string[] = [];
     try {
-        const response = await handler(request, {enqueueImageJob: mockEnqueue});
+        const response = await handler(request, {enqueueImageJob: mockEnqueue, reverseGeocode: mockReverseGeocode});
         const json = await response.json();
         paths = json.paths || [];
 
@@ -443,7 +451,8 @@ _test("MP4 video frame extraction works correctly", async () => {
     try {
         const response = await handler(request, {
             enqueueImageJob: mockEnqueue,
-            extractVideoFrame: mockExtractVideoFrame
+            extractVideoFrame: mockExtractVideoFrame,
+            reverseGeocode: mockReverseGeocode
         });
         const json = await response.json();
         paths = json.paths || [];

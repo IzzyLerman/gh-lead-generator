@@ -5,6 +5,7 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import ExifReader from 'https://esm.sh/exifreader@4';
 import { Database } from './../_shared/database.types.ts'
 
 interface CloudinaryUploadResponse {
@@ -41,7 +42,7 @@ function log(message: string, ...args: unknown[]) {
 
 async function verifySignature(body: ArrayBuffer, timestamp: string, signature: string, secret: string): Promise<boolean> {
   try {
-    const timeLimit = 5 * 60 * 1000; // 5 minutes
+    const timeLimit = 30 * 60 * 1000; // 30 minutes
     const now = Date.now();
     const requestTime = parseInt(timestamp) * 1000;
     
@@ -78,7 +79,7 @@ async function verifySignature(body: ArrayBuffer, timestamp: string, signature: 
 
 async function verifyContentBasedSignature(attachments: File[], senderEmail: string, timestamp: string, signature: string, secret: string): Promise<boolean> {
   try {
-    const timeLimit = 5 * 60 * 1000; // 5 minutes
+    const timeLimit = 30 * 60 * 1000; // 30 minutes
     const now = Date.now();
     const requestTime = parseInt(timestamp) * 1000;
     
@@ -94,10 +95,30 @@ async function verifyContentBasedSignature(attachments: File[], senderEmail: str
     signaturePayloads.push(new TextEncoder().encode(senderEmail));
     
     for (const attachment of attachments) {
-      // Include filename and content type in signature for security (matching Lambda logic)
-      const metaString = `${attachment.name}:${attachment.type}:`;
+      // Normalize MIME type for signature verification consistency
+      let normalizedType = attachment.type;
+      
+      // Handle common cases where MIME detection differs between client and server
+      const fileName = attachment.name.toLowerCase();
+      if (fileName.endsWith('.heic') || fileName.endsWith('.heif')) {
+        normalizedType = 'image/heic';
+      } else if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) {
+        normalizedType = 'image/jpeg';
+      } else if (fileName.endsWith('.png')) {
+        normalizedType = 'image/png';
+      } else if (fileName.endsWith('.mp4')) {
+        normalizedType = 'video/mp4';
+      } else if (fileName.endsWith('.mov')) {
+        normalizedType = 'video/mov';
+      } else if (fileName.endsWith('.tiff') || fileName.endsWith('.tif')) {
+        normalizedType = 'image/tiff';
+      }
+      
+      // Include filename and normalized content type in signature for security (matching Lambda logic)
+      const metaString = `${attachment.name}:${normalizedType}:`;
       const metaBuffer = new TextEncoder().encode(metaString);
       const contentBuffer = new Uint8Array(await attachment.arrayBuffer());
+      
       
       signaturePayloads.push(metaBuffer);
       signaturePayloads.push(contentBuffer);
@@ -334,17 +355,150 @@ async function uploadFileToStorage(supabase: SupabaseClient<Database>, file: Fil
   return data;
 }
 
-async function uploadFileAndCreateRecord(supabase: SupabaseClient<Database>, file: File, filename: string, senderEmail: string) {
+async function extractLocationFromExif(file: File): Promise<string | null> {
+  try {
+    // Check if file is an image format that can contain EXIF data
+    const supportedTypes = ['image/jpeg', 'image/jpg', 'image/tiff', 'image/tif', 'image/heic', 'image/heif'];
+    if (!supportedTypes.includes(file.type.toLowerCase())) {
+      log(`File type ${file.type} not supported for EXIF reading`);
+      return null;
+    }
+
+    // Read EXIF data using ArrayBuffer approach
+    const arrayBuffer = await file.arrayBuffer();
+    const tags = ExifReader.load(arrayBuffer, {
+      includeUnknown: false,
+      expanded: false
+    });
+    
+    // Extract GPS coordinates if available
+    const gpsLat = tags.GPSLatitude;
+    const gpsLatRef = tags.GPSLatitudeRef;
+    const gpsLon = tags.GPSLongitude;
+    const gpsLonRef = tags.GPSLongitudeRef;
+
+    if (gpsLat && gpsLatRef && gpsLon && gpsLonRef) {
+      try {
+        // Use the pre-processed description values from ExifReader
+        const latDescription = gpsLat.description;
+        const lonDescription = gpsLon.description;
+        const latRef = gpsLatRef.description || gpsLatRef.value;
+        const lonRef = gpsLonRef.description || gpsLonRef.value;
+
+        if (latDescription && lonDescription && latRef && lonRef) {
+          // Parse the decimal degrees from description
+          const lat = parseFloat(latDescription);
+          const lon = parseFloat(lonDescription);
+
+          if (!isNaN(lat) && !isNaN(lon)) {
+            // Apply direction (negative for South and West)
+            const finalLat = (latRef === 'S' || latRef === 'South') ? -lat : lat;
+            const finalLon = (lonRef === 'W' || lonRef === 'West') ? -lon : lon;
+            
+            const locationString = `${finalLat.toFixed(6)}, ${finalLon.toFixed(6)}`;
+            log(`EXIF location found: ${locationString}`);
+            return locationString;
+          } else {
+            log(`Could not parse GPS coordinates from descriptions: lat=${latDescription}, lon=${lonDescription}`);
+            return null;
+          }
+        } else {
+          log(`Missing GPS coordinate descriptions for ${file.name || 'unknown file'}`);
+          return null;
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        log(`Error processing GPS coordinates from ${file.name || 'unknown file'}: ${errorMessage}`);
+        return null;
+      }
+    } else {
+      log(`No GPS coordinates found in EXIF data for ${file.name || 'unknown file'}`);
+      return null;
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log(`Error reading EXIF data from ${file.name || 'unknown file'}: ${errorMessage}`);
+    return null;
+  }
+}
+
+
+async function reverseGeocode(lat: number, lon: number): Promise<string | null> {
+  try {
+    const geoapifyApiKey = Deno.env.get('GEOAPIFY_API_KEY');
+    if (!geoapifyApiKey) {
+      log('GEOAPIFY_API_KEY not found, skipping reverse geocoding');
+      return null;
+    }
+
+    const url = `https://api.geoapify.com/v1/geocode/reverse?lat=${lat}&lon=${lon}&apiKey=${geoapifyApiKey}`;
+    
+    // Add timeout and better error handling for network issues
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+    
+    const response = await fetch(url, { 
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'SupabaseFunction/1.0'
+      }
+    });
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      log(`Geoapify API error: ${response.status} ${response.statusText}`);
+      return null;
+    }
+
+    const data = await response.json();
+    
+    if (data.features && data.features.length > 0) {
+      const feature = data.features[0];
+      const properties = feature.properties;
+      
+      // Build street address from components
+      const addressParts = [];
+      if (properties.housenumber) addressParts.push(properties.housenumber);
+      if (properties.street) addressParts.push(properties.street);
+      if (properties.city) addressParts.push(properties.city);
+      if (properties.state) addressParts.push(properties.state);
+      if (properties.postcode) addressParts.push(properties.postcode);
+      
+      const streetAddress = addressParts.join(', ');
+      log(`Reverse geocoding successful: ${streetAddress}`);
+      return streetAddress || null;
+    } else {
+      log('No address found for coordinates');
+      return null;
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log(`Error in reverse geocoding: ${errorMessage}`);
+    return null;
+  }
+}
+
+async function uploadFileAndCreateRecord(
+  supabase: SupabaseClient<Database>, 
+  file: File, 
+  filename: string, 
+  senderEmail: string,
+  reverseGeocoder?: (lat: number, lon: number) => Promise<string | null>,
+  gpsCoordinates?: string | null,
+  streetAddress?: string | null
+) {
   // Upload to storage first
   const uploadData = await uploadFileToStorage(supabase, file, filename);
   
-  // Create record in vehicle-photos table with sender email
+  // Create record in vehicle-photos table with separated GPS and location data
   const { error: insertError } = await supabase
     .from("vehicle-photos")
     .upsert({
       name: uploadData.path,
       submitted_by: senderEmail,
-      status: 'unprocessed'
+      status: 'unprocessed',
+      gps: gpsCoordinates,
+      location: streetAddress
     }, {
       onConflict: 'name'
     });
@@ -383,7 +537,8 @@ async function processAttachments(
   supabase: SupabaseClient<Database>,
   pgmq_public: SupabaseClient<Database, 'pgmq_public'>,
   enqueue: typeof enqueueImageJob,
-  videoFrameExtractor?: typeof extractVideoFrameFromCloudinary
+  videoFrameExtractor?: typeof extractVideoFrameFromCloudinary,
+  reverseGeocoder?: (lat: number, lon: number) => Promise<string | null>
 ): Promise<Response> {
   if (attachments.length > 5) {
     attachments.splice(5);
@@ -400,10 +555,45 @@ async function processAttachments(
   for (const file of attachments) {
     try {
       validateFile(file);
+      
+      // Extract EXIF location from original file BEFORE processing
+      const coordinatesString = await extractLocationFromExif(file);
+      let streetAddress: string | null = null;
+      
+      // If we have coordinates, try to get street address
+      if (coordinatesString) {
+        const coords = coordinatesString.split(', ');
+        if (coords.length === 2) {
+          const lat = parseFloat(coords[0]);
+          const lon = parseFloat(coords[1]);
+          
+          if (!isNaN(lat) && !isNaN(lon)) {
+            try {
+              const geocoder = reverseGeocoder || reverseGeocode;
+              streetAddress = await geocoder(lat, lon);
+              if (streetAddress) {
+                log(`Complete location data - GPS: ${coordinatesString}, Address: ${streetAddress}`);
+              } else {
+                log(`Only coordinates available: ${coordinatesString}`);
+              }
+            } catch (error) {
+              const errorMessage = error instanceof Error ? error.message : String(error);
+              log(`Reverse geocoding failed: ${errorMessage}, using coordinates only`);
+            }
+          }
+        }
+      } else {
+        const fileName = file.name || 'unknown file';
+        log(`No location metadata found for ${fileName}`);
+      }
+      
+      // Process file for vision (may strip EXIF)
       const processedFile = await processFileForVision(file, videoFrameExtractor);
       const filename = generateUniqueFilename(processedFile.name);
       log(`Uploading file as ${filename}`);
-      const uploadData = await uploadFileAndCreateRecord(supabase, processedFile, filename, senderEmail);
+      
+      // Upload file with separated GPS and location data
+      const uploadData = await uploadFileAndCreateRecord(supabase, processedFile, filename, senderEmail, undefined, coordinatesString, streetAddress);
       log(`File uploaded and record created: ${uploadData.path}`);
       uploadedPaths.push(uploadData.path);
       
@@ -448,12 +638,14 @@ export const handler = async (
     req: Request,
     options?: {
         enqueueImageJob?: typeof enqueueImageJob,
-        extractVideoFrame?: typeof extractVideoFrameFromCloudinary
+        extractVideoFrame?: typeof extractVideoFrameFromCloudinary,
+        reverseGeocode?: (lat: number, lon: number) => Promise<string | null>
     }
 ) => {
 
   const enqueue = options?.enqueueImageJob ?? enqueueImageJob
   const videoFrameExtractor = options?.extractVideoFrame
+  const reverseGeocoder = options?.reverseGeocode
 
 
   const SUPABASE_SERVICE_ROLE_KEY = getEnvVar("SUPABASE_SERVICE_ROLE_KEY");
@@ -528,7 +720,7 @@ export const handler = async (
       });
     }
     
-    return await processAttachments(attachments, senderEmail, supabase, pgmq_public, enqueue, videoFrameExtractor);
+    return await processAttachments(attachments, senderEmail, supabase, pgmq_public, enqueue, videoFrameExtractor, reverseGeocoder);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     log(`Error: ${errorMessage}`);
