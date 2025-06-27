@@ -1,7 +1,7 @@
 import { assertEquals, assert } from "https://deno.land/std@0.177.0/testing/asserts.ts";
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { Database } from '../_shared/database.types.ts';
-import { handler } from "../receive-email/index.ts";
+import { Database } from './../_shared/database.types.ts';
+import { handler } from "./../receive-email/index.ts";
 
 function getTestEnvVar(key: string): string {
     // @ts-ignore: Deno global may not be recognized
@@ -120,10 +120,11 @@ async function mockReverseGeocode(lat: number, lon: number): Promise<string | nu
 }
 
 _test("Valid PNG attachment is uploaded to bucket", async () => {
+    const senderEmail = 'test@example.com';
     const file = createMockFile("test-image.png", "image/png", 1 * 1024 * 1024); // 1MB
-    const formData = createFormDataWithSender([file]);
+    const formData = createFormDataWithSender([file], senderEmail);
 
-    const { timestamp, signature } = await generateAuthHeaders([file]);
+    const { timestamp, signature } = await generateAuthHeaders([file], senderEmail);
     const request = new Request("https://fake-url.com/receive-email", {
         method: "POST",
         headers: {
@@ -153,17 +154,18 @@ _test("Valid PNG attachment is uploaded to bucket", async () => {
         assertEquals(fileData!.size, file.size, "Downloaded file size should match original");
 
     } finally {
-        if (paths.length > 0) {
+        if (paths && paths.length > 0) {
             await supabase.storage.from("gh-vehicle-photos").remove(paths);
         }
     }
 });
 
 _test("Valid JPG attachment is uploaded to bucket", async () => {
+    const senderEmail = 'test@example.com';
     const file = createMockFile("test-image.jpg", "image/jpeg", 2 * 1024 * 1024); // 2MB
-    const formData = createFormDataWithSender([file]);
+    const formData = createFormDataWithSender([file], senderEmail);
 
-    const { timestamp, signature } = await generateAuthHeaders([file]);
+    const { timestamp, signature } = await generateAuthHeaders([file], senderEmail);
     const request = new Request("https://fake-url.com/receive-email", {
         method: "POST",
         headers: {
@@ -188,17 +190,18 @@ _test("Valid JPG attachment is uploaded to bucket", async () => {
         assert(downloadError === null);
         assertEquals(fileData!.size, file.size);
     } finally {
-        if (paths.length > 0) {
+        if (paths && paths.length > 0) {
             await supabase.storage.from("gh-vehicle-photos").remove(paths);
         }
     }
 });
 
 _test("Filename with no extension is handled", async () => {
+    const senderEmail = 'test@example.com';
     const file = createMockFile("image-no-ext", "image/png", 1024); // 1KB
-    const formData = createFormDataWithSender([file]);
+    const formData = createFormDataWithSender([file], senderEmail);
 
-    const { timestamp, signature } = await generateAuthHeaders([file]);
+    const { timestamp, signature } = await generateAuthHeaders([file], senderEmail);
     const request = new Request("https://fake-url.com/receive-email", {
         method: "POST",
         headers: {
@@ -224,7 +227,7 @@ _test("Filename with no extension is handled", async () => {
         assert(downloadError === null);
         assertEquals(fileData!.size, file.size);
     } finally {
-        if (paths.length > 0) {
+        if (paths && paths.length > 0) {
             await supabase.storage.from("gh-vehicle-photos").remove(paths);
         }
     }
@@ -232,9 +235,10 @@ _test("Filename with no extension is handled", async () => {
 
 
 _test("Request with no attachments is handled", async () => {
-    const formData = createFormDataWithSender([]);
+    const senderEmail = 'test@example.com';
+    const formData = createFormDataWithSender([], senderEmail);
     
-    const { timestamp, signature } = await generateAuthHeaders([]);
+    const { timestamp, signature } = await generateAuthHeaders([], senderEmail);
     const request = new Request("https://fake-url.com/receive-email", {
         method: "POST",
         headers: {
@@ -252,10 +256,11 @@ _test("Request with no attachments is handled", async () => {
 });
 
 _test("Request with invalid-type attachments (.txt) is handled", async () => {
+    const senderEmail = 'test@example.com';
     const file = createMockFile("document.txt", "text/plain", 1024);
-    const formData = createFormDataWithSender([file]);
+    const formData = createFormDataWithSender([file], senderEmail);
 
-    const { timestamp, signature } = await generateAuthHeaders([file]);
+    const { timestamp, signature } = await generateAuthHeaders([file], senderEmail);
     const request = new Request("https://fake-url.com/receive-email", {
         method: "POST",
         headers: {
@@ -268,17 +273,19 @@ _test("Request with invalid-type attachments (.txt) is handled", async () => {
     const response = await handler(request, {enqueueImageJob: mockEnqueue});
     const json = await response.json();
 
-    assertEquals(response.status, 500);
-    assertEquals(json.error, "Invalid file type: text/plain");
+    assertEquals(response.status, 400);
+    assertEquals(json.error, "No files could be processed");
+    assert(json.errors.includes("document.txt: Invalid file type: text/plain"));
 });
 
 _test("File too large is handled", async () => {
+    const senderEmail = 'test@example.com';
     const maxSize = 50 * 1024 * 1024;
     const oversize = maxSize + 1;
     const file = createMockFile("oversized-image.png", "image/png", oversize);
-    const formData = createFormDataWithSender([file]);
+    const formData = createFormDataWithSender([file], senderEmail);
 
-    const { timestamp, signature } = await generateAuthHeaders([file]);
+    const { timestamp, signature } = await generateAuthHeaders([file], senderEmail);
     const request = new Request("https://fake-url.com/receive-email", {
         method: "POST",
         headers: {
@@ -291,11 +298,13 @@ _test("File too large is handled", async () => {
     const response = await handler(request, {enqueueImageJob: mockEnqueue});
     const json = await response.json();
 
-    assertEquals(response.status, 500);
-    assertEquals(json.error, `File too large: ${oversize}`);
+    assertEquals(response.status, 400);
+    assertEquals(json.error, "No files could be processed");
+    assert(json.errors.includes(`oversized-image.png: File too large: ${oversize}`));
 });
 
 _test("Request with 5 attachments is processed correctly", async () => {
+    const senderEmail = 'test@example.com';
     const paths: string[] = [];
     const files: File[] = [];
     
@@ -304,9 +313,9 @@ _test("Request with 5 attachments is processed correctly", async () => {
         files.push(file);
     }
     
-    const formData = createFormDataWithSender(files);
+    const formData = createFormDataWithSender(files, senderEmail);
 
-    const { timestamp, signature } = await generateAuthHeaders(files);
+    const { timestamp, signature } = await generateAuthHeaders(files, senderEmail);
     const request = new Request("https://fake-url.com/receive-email", {
         method: "POST",
         headers: {
@@ -336,13 +345,14 @@ _test("Request with 5 attachments is processed correctly", async () => {
             assert(fileData !== null, "File data should not be null");
         }
     } finally {
-        if (paths.length > 0) {
+        if (paths && paths.length > 0) {
             await supabase.storage.from("gh-vehicle-photos").remove(paths);
         }
     }
 });
 
 _test("Request with 6 attachments processes only first 5", async () => {
+    const senderEmail = 'test@example.com';
     const paths: string[] = [];
     const files: File[] = [];
     
@@ -351,9 +361,9 @@ _test("Request with 6 attachments processes only first 5", async () => {
         files.push(file);
     }
     
-    const formData = createFormDataWithSender(files);
+    const formData = createFormDataWithSender(files, senderEmail);
 
-    const { timestamp, signature } = await generateAuthHeaders(files);
+    const { timestamp, signature } = await generateAuthHeaders(files, senderEmail);
     const request = new Request("https://fake-url.com/receive-email", {
         method: "POST",
         headers: {
@@ -383,18 +393,19 @@ _test("Request with 6 attachments processes only first 5", async () => {
             assert(fileData !== null, "File data should not be null");
         }
     } finally {
-        if (paths.length > 0) {
+        if (paths && paths.length > 0) {
             await supabase.storage.from("gh-vehicle-photos").remove(paths);
         }
     }
 });
 
 _test("HEIC attachment is converted to JPG and uploaded", async () => {
+    const senderEmail = 'test@example.com';
     const heicData = await Deno.readFile("./supabase/functions/tests/img/ex.heic");
     const file = new File([heicData], "ex.heic", { type: "image/heic" });
-    const formData = createFormDataWithSender([file]);
+    const formData = createFormDataWithSender([file], senderEmail);
 
-    const { timestamp, signature } = await generateAuthHeaders([file]);
+    const { timestamp, signature } = await generateAuthHeaders([file], senderEmail);
     const request = new Request("https://fake-url.com/receive-email", {
         method: "POST",
         headers: {
@@ -433,11 +444,12 @@ _test("HEIC attachment is converted to JPG and uploaded", async () => {
 
 
 _test("MP4 video frame extraction works correctly", async () => {
+    const senderEmail = 'test@example.com';
     const mp4Data = await Deno.readFile("./supabase/functions/tests/img/big_buck_bunny.mp4");
     const file = new File([mp4Data], "big_buck_bunny.mp4", { type: "video/mp4" });
-    const formData = createFormDataWithSender([file]);
+    const formData = createFormDataWithSender([file], senderEmail);
 
-    const { timestamp, signature } = await generateAuthHeaders([file]);
+    const { timestamp, signature } = await generateAuthHeaders([file], senderEmail);
     const request = new Request("https://fake-url.com/receive-email", {
         method: "POST",
         headers: {

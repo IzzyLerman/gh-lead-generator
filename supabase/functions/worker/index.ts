@@ -14,6 +14,7 @@ const CONSTANTS = {
   MAX_TOKENS: 1024,
   MODEL: "claude-3-5-haiku-20241022",
   QUEUE_NAME: "image-processing",
+  CONTACT_QUEUE_NAME: "contact-enrichment",
   BUCKET_NAME: "gh-vehicle-photos"
 } as const;
 
@@ -112,6 +113,11 @@ interface CompanyUpsertData {
   state?: string;
 }
 
+interface UpsertResult {
+  company_id: string;
+  was_insert: boolean;
+}
+
 export const upsertCompany = async (supabase: SupabaseClient<Database>, company: CompanyUpsertData) => {
   if (!supabase || !company.name) {
     const errorMessage = "Supabase client and company name are required.";
@@ -135,12 +141,12 @@ export const upsertCompany = async (supabase: SupabaseClient<Database>, company:
     }
 
     log(`Successfully upserted company: ${company.name}`);
-    return { data, success: true, error:null};
+    return { data, success: true, error: null };
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     log(`Error upserting company '${company.name}':`, errorMessage);
-    return { data: null, success: false,  error };
+    return { data: null, success: false, error };
   }
 };
 
@@ -220,6 +226,20 @@ export async function triggerWorker(supabase: SupabaseClient<Database>) {
     await supabase.functions.invoke('worker', {
         headers: { 'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }
     });
+}
+
+export async function enqueueForContactEnrichment(pgmq_public: SupabaseClient<Database, 'pgmq_public'>, companyId: string) {
+    const { error } = await pgmq_public.rpc('send', {
+        queue_name: CONSTANTS.CONTACT_QUEUE_NAME,
+        message: { company_id: companyId }
+    });
+
+    if (error) {
+        log('Error enqueueing company for contact enrichment:', error);
+        throw error;
+    }
+
+    log(`Successfully enqueued company ${companyId} for contact enrichment`);
 }
 
 const OCR_PROMPT = {
@@ -317,17 +337,33 @@ async function processMessages(companies: CompanyUpsertData[], messages: QueueMe
     } else {
       log("Successfully upserted", company.name);
       
+      // Extract company_id and insert flag from the new return format
+      const upsertResult = result.data as unknown as UpsertResult;
+      const companyId = upsertResult.company_id;
+      const wasInsert = upsertResult.was_insert;
+      
       // Update vehicle_photos table with company_id
       const pathname = message.message.image_path;
       const { error: updateError } = await supabase
         .from('vehicle-photos')
-        .update({ company_id: result.data })
+        .update({ company_id: companyId })
         .eq('name', pathname);
       
       if (updateError) {
         log("Error updating vehicle_photos with company_id:", updateError);
       } else {
         log("Successfully linked vehicle photo to company");
+      }
+      
+      // Only enqueue for contact enrichment if this was a new company (insert)
+      if (wasInsert) {
+        try {
+          await enqueueForContactEnrichment(pgmq_public, companyId);
+          log(`Enqueued new company ${company.name} for contact enrichment`);
+        } catch (error) {
+          log("Error enqueueing company for contact enrichment:", error);
+          // Don't fail the entire process if enqueueing fails
+        }
       }
       
       await deleteMessage(pgmq_public, message);

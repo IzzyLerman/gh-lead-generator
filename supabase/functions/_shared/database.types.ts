@@ -84,7 +84,7 @@ export type Database = {
           p_city: string
           p_state: string
         }
-        Returns: string
+        Returns: Json
       }
     }
     Enums: {

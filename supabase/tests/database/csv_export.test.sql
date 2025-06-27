@@ -1,6 +1,6 @@
 BEGIN;
 
-SELECT plan(9);
+SELECT plan(11);
 
 -- Test 1: Test that export_companies_csv function exists and can be called
 SELECT lives_ok(
@@ -16,7 +16,7 @@ SELECT lives_ok(
 
 -- Test 3: Verify companies CSV contains header row
 SELECT ok(
-    (SELECT private.export_companies_csv() LIKE 'name,industry,email_list,phone_list,city,state,status,group%'),
+    (SELECT private.export_companies_csv() LIKE 'name,industry,email_list,phone_list,city,state,status,group,submitted_by,picture_location%'),
     'Companies CSV should start with proper header row'
 );
 
@@ -65,7 +65,25 @@ SELECT ok(
     'Contacts CSV should include company name for each contact'
 );
 
+-- Test 10: Test companies CSV with vehicle photos data
+-- Insert a test vehicle photo linked to the test company
+INSERT INTO public."vehicle-photos" (name, submitted_by, location, company_id)
+VALUES ('test-photo.jpg', 'test@example.com', 'San Francisco, CA', 
+        (SELECT id FROM public.companies WHERE name = 'Test, Company "Quotes"'));
+
+SELECT ok(
+    (SELECT private.export_companies_csv() LIKE '%test@example.com%San Francisco, CA%'),
+    'Companies CSV should include submitted_by and picture_location from vehicle photos'
+);
+
+-- Test 11: Test companies CSV with NULL photo data (should show empty strings)
+SELECT ok(
+    (SELECT private.export_companies_csv() LIKE '%ABC Plumbing Services%"",%"",%'),
+    'Companies CSV should show empty strings for companies without vehicle photos'
+);
+
 -- Clean up test data
+DELETE FROM public."vehicle-photos" WHERE name = 'test-photo.jpg';
 DELETE FROM public.contacts WHERE name = 'Test Contact';
 DELETE FROM public.companies WHERE name = 'Test, Company "Quotes"';
 

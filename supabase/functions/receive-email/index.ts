@@ -428,8 +428,8 @@ async function extractLocationFromExif(file: File): Promise<string | null> {
         // Use the pre-processed description values from ExifReader
         const latDescription = gpsLat.description;
         const lonDescription = gpsLon.description;
-        const latRef = gpsLatRef.value[0];
-        const lonRef = gpsLonRef.value[0];
+        const latRef = Array.isArray(gpsLatRef.value) ? gpsLatRef.value[0] : gpsLatRef.value;
+        const lonRef = Array.isArray(gpsLonRef.value) ? gpsLonRef.value[0] : gpsLonRef.value;
 
         if (latDescription && lonDescription && latRef && lonRef) {
           // Parse the decimal degrees from description
@@ -654,7 +654,7 @@ async function processAttachments(
       await enqueue(pgmq_public, uploadData.path);
       log(`Job enqueued for image: ${uploadData.path} `);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
       log(`Failed to process file ${file.name}: ${errorMessage}`);
       errors.push(`${file.name}: ${errorMessage}`);
     }
@@ -703,7 +703,6 @@ export const handler = async (
 
 
   const SUPABASE_SERVICE_ROLE_KEY = getEnvVar("SUPABASE_SERVICE_ROLE_KEY");
-  log(SUPABASE_SERVICE_ROLE_KEY);
   const SUPABASE_URL = getEnvVar("SUPABASE_URL");
   const WORKER_URL = getEnvVar("WORKER_URL");
 

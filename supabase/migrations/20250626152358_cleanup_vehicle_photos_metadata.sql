@@ -6,7 +6,7 @@
     WHERE file_path = OLD.name;
     RETURN OLD;
   END;
-  $$ LANGUAGE plpgsql;
+  $$ LANGUAGE plpgsql IMMUTABLE SECURITY DEFINER SET search_path = private;
 
 -- Trigger on storage.objects table
 CREATE TRIGGER cleanup_vehicle_photos_trigger
