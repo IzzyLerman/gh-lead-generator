@@ -16,11 +16,7 @@ function getTestEnvVar(key: string): string {
 
 function _test(name: string, fn: () => Promise<void>) {
     Deno.test(name, async() => {
-        try {
-            await fn();
-        } finally {
-            await supabase.auth.signOut();
-        }
+        await fn();
     });
 }
 
@@ -47,15 +43,35 @@ function createFormDataWithSender(files: File[], senderEmail: string = 'test@exa
 async function generateAuthHeaders(attachments: File[], senderEmail: string = 'test@example.com'): Promise<{timestamp: string, signature: string}> {
     const timestamp = Math.floor(Date.now() / 1000).toString();
     
-    // Recreate the signature payload that matches the Lambda function
+    // Recreate the signature payload that matches the generate-signature.js script
     const signaturePayloads: Uint8Array[] = [];
     
-    // Include sender email in signature payload to match lambda function
-    signaturePayloads.push(new TextEncoder().encode(senderEmail));
+    // Include sender email in signature (matching generate-signature.js logic)
+    const senderEmailBuffer = new TextEncoder().encode(senderEmail);
+    signaturePayloads.push(senderEmailBuffer);
     
     for (const attachment of attachments) {
-        // Include filename and content type in signature for security (matching Lambda logic)
-        const metaString = `${attachment.name}:${attachment.type}:`;
+        // Normalize MIME type for signature verification consistency (matching receive-email function)
+        let normalizedType = attachment.type;
+        
+        // Handle common cases where MIME detection differs between client and server
+        const fileName = attachment.name.toLowerCase();
+        if (fileName.endsWith('.heic') || fileName.endsWith('.heif')) {
+            normalizedType = 'image/heic';
+        } else if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) {
+            normalizedType = 'image/jpeg';
+        } else if (fileName.endsWith('.png')) {
+            normalizedType = 'image/png';
+        } else if (fileName.endsWith('.mp4')) {
+            normalizedType = 'video/mp4';
+        } else if (fileName.endsWith('.mov')) {
+            normalizedType = 'video/mov';
+        } else if (fileName.endsWith('.tiff') || fileName.endsWith('.tif')) {
+            normalizedType = 'image/tiff';
+        }
+        
+        // Include filename and normalized content type in signature for security (matching receive-email function logic)
+        const metaString = `${attachment.name}:${normalizedType}:`;
         const metaBuffer = new TextEncoder().encode(metaString);
         const contentBuffer = new Uint8Array(await attachment.arrayBuffer());
         
@@ -72,8 +88,14 @@ async function generateAuthHeaders(attachments: File[], senderEmail: string = 't
         offset += part.length;
     }
     
-    const encoder = new TextEncoder();
-    const keyData = encoder.encode(WEBHOOK_SECRET);
+    // Create message with signature payload + timestamp (matching generate-signature.js function logic)
+    const timestampBuffer = new TextEncoder().encode(timestamp);
+    const message = new Uint8Array(signaturePayload.length + timestampBuffer.length);
+    message.set(signaturePayload, 0);
+    message.set(timestampBuffer, signaturePayload.length);
+    
+    // Generate HMAC-SHA256 signature
+    const keyData = new TextEncoder().encode(WEBHOOK_SECRET);
     const key = await crypto.subtle.importKey(
         'raw',
         keyData,
@@ -81,11 +103,6 @@ async function generateAuthHeaders(attachments: File[], senderEmail: string = 't
         false,
         ['sign']
     );
-    
-    // Create message with signature payload + timestamp (matching Lambda logic)
-    const message = new Uint8Array(signaturePayload.length + timestamp.length);
-    message.set(signaturePayload, 0);
-    message.set(encoder.encode(timestamp), signaturePayload.length);
     
     const calculatedSignature = await crypto.subtle.sign('HMAC', key, message);
     const signature = Array.from(new Uint8Array(calculatedSignature))

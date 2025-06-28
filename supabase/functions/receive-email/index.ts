@@ -242,12 +242,10 @@ async function destroyCloudinaryResource(publicId: string, resourceType: 'image'
       throw new Error(`Cloudinary destroy failed: ${response.status} ${errorText}`);
     }
 
-    const result = await response.json();
-    log(`Successfully destroyed Cloudinary resource: ${publicId}, result: ${result.result}`);
+    await response.json();
     
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    log(`Warning: Failed to destroy Cloudinary resource ${publicId}: ${errorMessage}`);
+    // Silently ignore cleanup failures
   }
 }
 
@@ -293,18 +291,12 @@ async function convertHeicToJpg(heicFile: File): Promise<File> {
 
 async function extractVideoFrameFromCloudinary(videoFile: File): Promise<File> {
   try {
-    log(`Extracting first frame from video: ${videoFile.name}`);
     const CLOUDINARY_CLOUD_NAME = getEnvVar("CLOUDINARY_CLOUD_NAME");
     
     const uploadResponse = await uploadToCloudinary(videoFile);
-    log(`Video uploaded to Cloudinary with public_id: ${uploadResponse.public_id}\n${JSON.stringify(uploadResponse)}`);
     
     const publicId = uploadResponse["public_id"];
-    if (!publicId) {
-	log(`No public_id field in Cloudinary response: ${uploadResponse}`);
-    }
     
-    log(`Downloading first frame from image with public_id: ${publicId}`);
     const response = await fetch(`https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/so_1,f_jpg/${publicId}.jpg`);
     
     if (!response.ok) {
@@ -316,10 +308,8 @@ async function extractVideoFrameFromCloudinary(videoFile: File): Promise<File> {
     const filename = videoFile.name.replace(/\.(mp4|mov)$/i, '.jpg');
     const resultFile = new File([frameBlob], filename, { type: 'image/jpeg' });
     
-    log(`Successfully extracted frame: ${resultFile.name}, size: ${resultFile.size} bytes`);
     
     // 5. Clean up video from Cloudinary to save storage
-    log(`Cleaning up Cloudinary video resource: ${uploadResponse.public_id}`);
     await destroyCloudinaryResource(uploadResponse.public_id, 'video');
     
     return resultFile;
@@ -333,10 +323,8 @@ async function extractVideoFrameFromCloudinary(videoFile: File): Promise<File> {
 
 async function processFileForVision(file: File, videoFrameExtractor?: typeof extractVideoFrameFromCloudinary): Promise<File> {
   if (file.type === 'image/heic') {
-    log(`Converting HEIC file ${file.name} to JPG`);
     return await convertHeicToJpg(file);
   } else if (file.type === 'video/mp4' || file.type === 'video/mov') {
-    log(`Extracting frame from video file ${file.name}`);
     const extractor = videoFrameExtractor ?? extractVideoFrameFromCloudinary;
     return await extractor(file);
   } else {
@@ -390,8 +378,7 @@ async function extractLocationFromExif(file: File): Promise<string | null> {
     // Check if file is an image format that can contain EXIF data
     const supportedTypes = ['image/jpeg', 'image/jpg', 'image/tiff', 'image/tif', 'image/heic', 'image/heif'];
     if (!supportedTypes.includes(file.type.toLowerCase())) {
-      log(`File type ${file.type} not supported for EXIF reading`);
-      return null;
+        return null;
     }
 
     // Read EXIF data using ArrayBuffer approach
@@ -401,13 +388,6 @@ async function extractLocationFromExif(file: File): Promise<string | null> {
       expanded: false
     });
     
-    // Log all EXIF tags for debugging
-    log(`=== ALL EXIF TAGS for ${file.name || 'unknown file'} ===`);
-    Object.entries(tags).forEach(([key, value]) => {
-      const tagValue = typeof value === 'object' && value !== null ? JSON.stringify(value, null, 2) : value;
-      log(`${key}: ${tagValue}`);
-    });
-    log(`=== END EXIF TAGS ===`);
     
     // Extract GPS coordinates if available
     const gpsLat = tags.GPSLatitude;
@@ -415,13 +395,6 @@ async function extractLocationFromExif(file: File): Promise<string | null> {
     const gpsLon = tags.GPSLongitude;
     const gpsLonRef = tags.GPSLongitudeRef;
     
-    // Log detailed GPS data for debugging
-    log(`=== GPS DATA DETAILS ===`);
-    log(`GPSLatitude raw:`, JSON.stringify(gpsLat, null, 2));
-    log(`GPSLatitudeRef raw:`, JSON.stringify(gpsLatRef, null, 2));
-    log(`GPSLongitude raw:`, JSON.stringify(gpsLon, null, 2));
-    log(`GPSLongitudeRef raw:`, JSON.stringify(gpsLonRef, null, 2));
-    log(`=== END GPS DATA ===`);
 
     if (gpsLat && gpsLatRef && gpsLon && gpsLonRef) {
       try {
@@ -436,28 +409,18 @@ async function extractLocationFromExif(file: File): Promise<string | null> {
           const lat = parseFloat(latDescription);
           const lon = parseFloat(lonDescription);
           
-          log(`=== COORDINATE CONVERSION ===`);
-          log(`Raw descriptions: lat="${latDescription}", lon="${lonDescription}"`);
-          log(`Parsed floats: lat=${lat}, lon=${lon}`);
-          log(`Direction refs: latRef="${latRef}", lonRef="${lonRef}"`);
 
           if (!isNaN(lat) && !isNaN(lon)) {
             // Apply direction (negative for South and West)
             const finalLat = (latRef === 'S' || latRef === 'South') ? -lat : lat;
             const finalLon = (lonRef === 'W' || lonRef === 'West') ? -lon : lon;
             
-            log(`Final coordinates: lat=${finalLat}, lon=${finalLon}`);
-            
             const locationString = `${finalLat.toFixed(6)}, ${finalLon.toFixed(6)}`;
-            log(`Final location string: ${locationString}`);
-            log(`=== END COORDINATE CONVERSION ===`);
             return locationString;
           } else {
-            log(`Could not parse GPS coordinates from descriptions: lat=${latDescription}, lon=${lonDescription}`);
             return null;
           }
         } else {
-          log(`Missing GPS coordinate descriptions for ${file.name || 'unknown file'}`);
           return null;
         }
       } catch (error) {
@@ -466,7 +429,6 @@ async function extractLocationFromExif(file: File): Promise<string | null> {
         return null;
       }
     } else {
-      log(`No GPS coordinates found in EXIF data for ${file.name || 'unknown file'}`);
       return null;
     }
   } catch (error) {
@@ -481,8 +443,7 @@ async function reverseGeocode(lat: number, lon: number): Promise<string | null> 
   try {
     const geoapifyApiKey = Deno.env.get('GEOAPIFY_API_KEY');
     if (!geoapifyApiKey) {
-      log('GEOAPIFY_API_KEY not found, skipping reverse geocoding');
-      return null;
+        return null;
     }
 
     const url = `https://api.geoapify.com/v1/geocode/reverse?lat=${lat}&lon=${lon}&apiKey=${geoapifyApiKey}`;
@@ -500,7 +461,6 @@ async function reverseGeocode(lat: number, lon: number): Promise<string | null> 
     clearTimeout(timeoutId);
     
     if (!response.ok) {
-      log(`Geoapify API error: ${response.status} ${response.statusText}`);
       return null;
     }
 
@@ -519,10 +479,8 @@ async function reverseGeocode(lat: number, lon: number): Promise<string | null> 
       if (properties.postcode) addressParts.push(properties.postcode);
       
       const streetAddress = addressParts.join(', ');
-      log(`Reverse geocoding successful: ${streetAddress}`);
       return streetAddress || null;
     } else {
-      log('No address found for coordinates');
       return null;
     }
   } catch (error) {
@@ -570,7 +528,6 @@ export async function enqueueImageJob(pgmq_public: SupabaseClient<Database, 'pgm
     queue_name: "image-processing",
     message: { image_path: imagePath },
   });
-  log(`send result: ${JSON.stringify(data)}`);
   if (!data){
 	  throw new Error("Failed to upload to the queue");
   }
@@ -625,34 +582,23 @@ async function processAttachments(
             try {
               const geocoder = reverseGeocoder || reverseGeocode;
               streetAddress = await geocoder(lat, lon);
-              if (streetAddress) {
-                log(`Complete location data - GPS: ${coordinatesString}, Address: ${streetAddress}`);
-              } else {
-                log(`Only coordinates available: ${coordinatesString}`);
-              }
             } catch (error) {
               const errorMessage = error instanceof Error ? error.message : String(error);
               log(`Reverse geocoding failed: ${errorMessage}, using coordinates only`);
             }
           }
         }
-      } else {
-        const fileName = file.name || 'unknown file';
-        log(`No location metadata found for ${fileName}`);
       }
       
       // Process file for vision (may strip EXIF)
       const processedFile = await processFileForVision(file, videoFrameExtractor);
       const filename = generateUniqueFilename(processedFile.name);
-      log(`Uploading file as ${filename}`);
       
       // Upload file with separated GPS and location data
       const uploadData = await uploadFileAndCreateRecord(supabase, processedFile, filename, senderEmail, undefined, coordinatesString, streetAddress);
-      log(`File uploaded and record created: ${uploadData.path}`);
       uploadedPaths.push(uploadData.path);
       
       await enqueue(pgmq_public, uploadData.path);
-      log(`Job enqueued for image: ${uploadData.path} `);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
       log(`Failed to process file ${file.name}: ${errorMessage}`);
@@ -725,7 +671,6 @@ export const handler = async (
     return new Response("Method Not Allowed", { status: 405 });
   }
 
-  console.log("INCOMING REQUEST HEADERS:", Object.fromEntries(req.headers));
 
   // WEBHOOK_SECRET is required for security
   const webhookSecret = Deno.env.get("WEBHOOK_SECRET");

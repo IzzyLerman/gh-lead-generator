@@ -32,6 +32,10 @@ public = false
 file_size_limit = "50MiB"
 objects_path = "./seed_img"
 
+[db.vault]
+worker_url = "env(WORKER_URL)"
+supabase_service_role_key = "env(SUPABASE_SERVICE_ROLE_KEY)"
+
 [functions.find-contacts]
 enabled = true
 verify_jwt = true

@@ -60,6 +60,65 @@ const mockLLMAPICall = async (req: any, url: string, key: string) => {
         });
 }
 
+function generateMockLLMWithUniqueCompanies(n: number) {
+    const companies = [
+        {
+            name: "ABC Plumbing Services",
+            email: "info@abcplumbing.com", 
+            phone: "555-0101",
+            industry: ["plumbing"],
+            city: "Dallas",
+            state: "TX"
+        },
+        {
+            name: "XYZ Electrical Corp",
+            email: "contact@xyzelectric.com",
+            phone: "555-0202", 
+            industry: ["electrical"],
+            city: "Houston",
+            state: "TX"
+        },
+        {
+            name: "DEF HVAC Solutions",
+            email: "service@defhvac.com",
+            phone: "555-0303",
+            industry: ["heating"],
+            city: "Austin",
+            state: "TX"
+        },
+        {
+            name: "GHI Roofing Experts",
+            email: "info@ghiroofing.com",
+            phone: "555-0404",
+            industry: ["roofing"],
+            city: "San Antonio",
+            state: "TX"
+        },
+        {
+            name: "JKL Landscaping Pro",
+            email: "hello@jkllandscape.com",
+            phone: "555-0505",
+            industry: ["landscaping"],
+            city: "Fort Worth",
+            state: "TX"
+        }
+    ];
+    
+    let callCount = 0;
+    return async (req: any, url: string, key: string) => {
+        const companyIndex = callCount % companies.length;
+        const company = companies[companyIndex];
+        callCount++;
+        
+        return Promise.resolve({
+            content: [{
+                text: JSON.stringify(company),
+                type: "text"
+            }]
+        });
+    };
+}
+
 function _test(name: string, fn: () => Promise<void>) {
     Deno.test(name, async() => {
         try {

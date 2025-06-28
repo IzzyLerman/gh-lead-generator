@@ -6,6 +6,7 @@ import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { Database } from './../_shared/database.types.ts'
 import { ParsedCompanyDataSchema, ParsedCompanyData } from "./../_shared/schema.ts";
+import { mockVisionAPI } from "./vision-mocks.ts";
 
 const CONSTANTS = {
   BATCH_SIZE: 5,
@@ -180,7 +181,14 @@ export async function generateSignedUrls(supabase: SupabaseClient<Database>, mes
         return { urls: null, num: 0 };
     }
 
-    const signedUrlPromises = messages.map(message => 
+    // Filter out test messages and messages without image_path
+    const validMessages = messages.filter(message => message.message?.image_path);
+    if (validMessages.length === 0) {
+        log(`No valid messages with image_path found out of ${messages.length} total`);
+        return { urls: null, num: 0 };
+    }
+
+    const signedUrlPromises = validMessages.map(message => 
         supabase.storage
             .from(CONSTANTS.BUCKET_NAME)
             .createSignedUrl(message.message.image_path, CONSTANTS.SIGNED_URL_EXPIRY)
@@ -188,7 +196,7 @@ export async function generateSignedUrls(supabase: SupabaseClient<Database>, mes
                 if (error) {
                     throw new Error(`Failed to create signed URL for ${message.message.image_path}: ${error.message}`);
                 }
-                return { signedUrl: data.signedUrl, messageId: message.id };
+                return { signedUrl: data.signedUrl, messageId: message.msg_id };
             })
     );
 
@@ -394,7 +402,11 @@ export const handler = async (req: Request, overrides?: {
     );
 
     const dequeue = overrides?.dequeueElement ?? dequeueElement;
-    const vision = overrides?.callVisionAPI ?? callVisionAPI;
+    
+    // Use mock Vision API if environment variable is set, otherwise use real API
+    const useMockVision = Deno.env.get("USE_MOCK_VISION") === "true";
+    const vision = overrides?.callVisionAPI ?? (useMockVision ? mockVisionAPI : callVisionAPI);
+    
     const llm = overrides?.callLLMAPI ?? callLLMAPI;
     const url = overrides?.generateSignedUrls ?? generateSignedUrls;
 
