@@ -174,7 +174,7 @@ jobs:
         USE_MOCK_VISION: 'true'
         USE_MOCK_LLM: 'true'
         E2E_REAL_APIS: 'true'
-      run: deno test --allow-all ./tests/e2e/
+      run: deno test --allow-all --env-file=./supabase/functions/.env.local ./tests/e2e/
 
     - name: Upload test artifacts
       if: always()
