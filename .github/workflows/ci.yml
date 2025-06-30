@@ -57,19 +57,30 @@ jobs:
     - name: Run database migrations
       run: supabase db reset --local
 
+    - name: Run database tests
+      run: supabase test db
+
     - name: Run Deno function tests
       env:
         SUPABASE_URL: http://127.0.0.1:54321
         SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY_LOCAL }}
+        SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+        SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        ANTHROPIC_API_URL: ${{ secrets.ANTHROPIC_API_URL }}
         VISION_API_KEY: ${{ secrets.VISION_API_KEY }}
-        ANTHROPIC_API_URL: https://api.anthropic.com
-        VISION_API_URL: https://vision.googleapis.com
-        WORKER_URL: http://127.0.0.1:54321/functions/v1/worker
+        VISION_API_URL: ${{ secrets.VISION_API_URL }}
+        CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+        CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+        CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+        GEOAPIFY_API_KEY: ${{ secrets.GEOAPIFY_API_KEY }}
+        RECEIVE_EMAIL_URL: ${{ secrets.RECEIVE_EMAIL_URL }}
+        WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+        WORKER_URL: ${{ secrets.WORKER_URL }}
       run: deno test --allow-all --env-file=./supabase/functions/.env ./supabase
 
-    - name: Run database tests
-      run: supabase test db
 
   e2e-tests:
     runs-on: ubuntu-latest
@@ -105,7 +116,7 @@ jobs:
       run: supabase functions serve --no-verify-jwt &
 
     - name: Wait for functions to be ready
-      run: sleep 10
+      run: sleep 3 
 
     - name: Install dashboard dependencies
       working-directory: ./dashboard
@@ -120,20 +131,30 @@ jobs:
       run: npm run start &
 
     - name: Wait for dashboard to be ready
-      run: sleep 10
+      run: sleep 3
 
     - name: Run E2E tests
       env:
         SUPABASE_URL: http://127.0.0.1:54321
         SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY_LOCAL }}
+        SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+        SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        ANTHROPIC_API_URL: ${{ secrets.ANTHROPIC_API_URL }}
         VISION_API_KEY: dummy-key-not-used-with-mocks
-        ANTHROPIC_API_URL: https://api.anthropic.com
-        VISION_API_URL: https://vision.googleapis.com
-        WORKER_URL: http://127.0.0.1:54321/functions/v1/worker
+        VISION_API_URL: ${{ secrets.VISION_API_URL }}
+        CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+        CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+        CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+        GEOAPIFY_API_KEY: ${{ secrets.GEOAPIFY_API_KEY }}
         RECEIVE_EMAIL_URL: http://127.0.0.1:54321/functions/v1/receive-email
+        WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+        WORKER_URL: ${{ secrets.WORKER_URL }}
         DASHBOARD_URL: http://localhost:3000
         USE_MOCK_VISION: 'true'
+        USE_MOCK_LLM: 'true'
         E2E_REAL_APIS: 'true'
       run: deno test --allow-all ./tests/e2e/
 

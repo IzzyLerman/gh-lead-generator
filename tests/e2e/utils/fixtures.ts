@@ -1,5 +1,76 @@
 import { createFileFromPath } from "./test-client.ts";
 
+export class TestLLMContext {
+  private static instance: TestLLMContext;
+  
+  static getInstance(): TestLLMContext {
+    if (!TestLLMContext.instance) {
+      TestLLMContext.instance = new TestLLMContext();
+    }
+    return TestLLMContext.instance;
+  }
+  
+  async setFixedCompany(index: number) {
+    try {
+      const supabaseUrl = Deno.env.get("SUPABASE_URL");
+      const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+      
+      if (!supabaseUrl || !supabaseKey) {
+        console.log("[TEST-CONTEXT] Missing Supabase credentials");
+        return;
+      }
+      
+      const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.50.1");
+      const supabase = createClient(supabaseUrl, supabaseKey, {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      });
+      
+      const { error } = await supabase.schema('private').rpc('set_test_force_company', { company_index: index });
+      
+      if (error) {
+        console.log(`[TEST-CONTEXT] Error setting forced company: ${error.message}`);
+      } else {
+        console.log(`[TEST-CONTEXT] Fixed company index set to: ${index}`);
+      }
+    } catch (error) {
+      console.log(`[TEST-CONTEXT] Error setting fixed company: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  
+  async clearFixedCompany() {
+    try {
+      const supabaseUrl = Deno.env.get("SUPABASE_URL");
+      const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+      
+      if (!supabaseUrl || !supabaseKey) {
+        console.log("[TEST-CONTEXT] Missing Supabase credentials");
+        return;
+      }
+      
+      const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.50.1");
+      const supabase = createClient(supabaseUrl, supabaseKey, {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      });
+      
+      const { error } = await supabase.schema('private').rpc('clear_test_force_company');
+      
+      if (error) {
+        console.log(`[TEST-CONTEXT] Error clearing forced company: ${error.message}`);
+      } else {
+        console.log(`[TEST-CONTEXT] Fixed company index cleared`);
+      }
+    } catch (error) {
+      console.log(`[TEST-CONTEXT] Error clearing fixed company: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+}
+
 export class TestFixtures {
   private basePath = "./tests/e2e/fixtures";
 
@@ -21,7 +92,7 @@ export class TestFixtures {
 
   async getInvalidImage(): Promise<File> {
     return await createFileFromPath(
-      `${this.basePath}/ex.heic`,
+      `${this.basePath}/sampe-exif-heic.heic`,
       "personal-photo.heic",
       "image/heic"
     );

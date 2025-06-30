@@ -78,7 +78,7 @@ SELECT ok(
 
 -- Test 11: Test companies CSV with NULL photo data (should show empty strings)
 SELECT ok(
-    (SELECT private.export_companies_csv() LIKE '%ABC Plumbing Services%"",%"",%'),
+    (SELECT private.export_companies_csv() LIKE '%ABC Plumbing Services%,"",""'),
     'Companies CSV should show empty strings for companies without vehicle photos'
 );
 

@@ -1,5 +1,6 @@
 
 [api]
+enabled = true
 schemas = ["private", "public",  "pgmq_public"]
 
 [db]

@@ -44,6 +44,40 @@ jobs:
           -X POST \
           -d '{}' || echo "Health check failed - function may need warmup"
 
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    environment: production
+    needs: deploy-functions
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Vercel CLI
+      run: npm install --global vercel@latest
+
+    - name: Pull Vercel Environment Information
+      run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+    - name: Build Project Artifacts
+      run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+      env:
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        ANTHROPIC_API_URL: ${{ secrets.ANTHROPIC_API_URL }}
+        VISION_API_KEY: ${{ secrets.VISION_API_KEY }}
+        VISION_API_URL: ${{ secrets.VISION_API_URL }}
+        CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+        CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+        CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+        GEOAPIFY_API_KEY: ${{ secrets.GEOAPIFY_API_KEY }}
+        RECEIVE_EMAIL_URL: ${{ secrets.RECEIVE_EMAIL_URL }}
+        WORKER_URL: ${{ secrets.WORKER_URL }}
+        WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+
+    - name: Deploy Project Artifacts to Vercel
+      run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+
     - name: Notify deployment status
       if: always()
       run: |

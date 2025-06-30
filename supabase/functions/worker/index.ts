@@ -7,6 +7,7 @@ import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { Database } from './../_shared/database.types.ts'
 import { ParsedCompanyDataSchema, ParsedCompanyData } from "./../_shared/schema.ts";
 import { mockVisionAPI } from "./vision-mocks.ts";
+import { mockLLMAPI } from "./llm-mocks.ts";
 
 const CONSTANTS = {
   BATCH_SIZE: 5,
@@ -336,13 +337,23 @@ function normalizeCompanyData(parsedData: ParsedCompanyData[]): CompanyUpsertDat
 
 async function processMessages(companies: CompanyUpsertData[], messages: QueueMessage[], supabase: SupabaseClient<Database>, pgmq_public: SupabaseClient<Database, 'pgmq_public'>) {
   const processPromises = companies.map(async (company, idx) => {
-    const result = await upsertCompany(supabase, company);
     const message = messages[idx];
+    const pathname = message.message.image_path;
     
-    if (!result.success) {
-      log("Error upserting company", company.name, ":", result.error);
-      await archiveMessage(pgmq_public, message);
-    } else {
+    try {
+      const result = await upsertCompany(supabase, company);
+      
+      if (!result.success) {
+        log("Error upserting company", company.name, ":", result.error);
+        
+        // Mark photo as failed
+        await supabase
+          .from('vehicle-photos')
+          .update({ status: 'failed' })
+          .eq('name', pathname);
+          
+        await archiveMessage(pgmq_public, message);
+      } else {
       log("Successfully upserted", company.name);
       
       // Extract company_id and insert flag from the new return format
@@ -350,17 +361,21 @@ async function processMessages(companies: CompanyUpsertData[], messages: QueueMe
       const companyId = upsertResult.company_id;
       const wasInsert = upsertResult.was_insert;
       
-      // Update vehicle_photos table with company_id
+      // Update vehicle_photos table with company_id and mark as processed
       const pathname = message.message.image_path;
       const { error: updateError } = await supabase
         .from('vehicle-photos')
-        .update({ company_id: companyId })
+        .update({ 
+          company_id: companyId,
+          status: 'processed'
+        })
         .eq('name', pathname);
       
       if (updateError) {
         log("Error updating vehicle_photos with company_id:", updateError);
+        throw updateError; // Re-throw to trigger failure handling
       } else {
-        log("Successfully linked vehicle photo to company");
+        log("Successfully linked vehicle photo to company and marked as processed");
       }
       
       // Only enqueue for contact enrichment if this was a new company (insert)
@@ -375,6 +390,17 @@ async function processMessages(companies: CompanyUpsertData[], messages: QueueMe
       }
       
       await deleteMessage(pgmq_public, message);
+      }
+    } catch (error) {
+      log("Error processing message:", error);
+      
+      // Mark photo as failed
+      await supabase
+        .from('vehicle-photos')
+        .update({ status: 'failed' })
+        .eq('name', pathname);
+        
+      await archiveMessage(pgmq_public, message);
     }
   });
 
@@ -407,7 +433,9 @@ export const handler = async (req: Request, overrides?: {
     const useMockVision = Deno.env.get("USE_MOCK_VISION") === "true";
     const vision = overrides?.callVisionAPI ?? (useMockVision ? mockVisionAPI : callVisionAPI);
     
-    const llm = overrides?.callLLMAPI ?? callLLMAPI;
+    // Use mock LLM API if environment variable is set, otherwise use real API
+    const useMockLLM = Deno.env.get("USE_MOCK_LLM") === "true";
+    const llm = overrides?.callLLMAPI ?? (useMockLLM ? mockLLMAPI : callLLMAPI);
     const url = overrides?.generateSignedUrls ?? generateSignedUrls;
 
     try {
@@ -427,10 +455,7 @@ export const handler = async (req: Request, overrides?: {
           features: [{ type: "TEXT_DETECTION" }]
       }));
 
-      log("Cloud Vision requests:", ocrRequests);
-      
       const ocrResponses = await vision(ocrRequests, envVars.VISION_API_URL, envVars.VISION_API_KEY);
-      log("OCR results:", ocrResponses);
       
       if (!ocrResponses) {
           throw new Error("Malformed OCR response: no 'responses' field");
@@ -450,7 +475,6 @@ export const handler = async (req: Request, overrides?: {
       );
 
       const normalizedCompanies = normalizeCompanyData(parsedCompanies);
-      log("Normalized company data:", normalizedCompanies);
 
       await processMessages(normalizedCompanies, messages, supabase, pgmq_public);
 

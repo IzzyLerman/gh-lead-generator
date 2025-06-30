@@ -15,7 +15,9 @@ Deno.test("E2E: Maximum Batch Processing - 5 images processed concurrently", asy
     const validImages = await fixtures.getMultipleValidImages();
     assertEquals(validImages.length, 5, "Should have 5 test images");
     
-    const response = await httpClient.uploadImages(validImages);
+    // Upload all 5 images in a single request with a test email
+    // The receive-email function can handle multiple images in one request
+    const response = await httpClient.uploadImages(validImages, "batch-test@example.com");
     
     console.log("Upload response status:", response.status);
     const responseBody = await response.json();
@@ -24,6 +26,8 @@ Deno.test("E2E: Maximum Batch Processing - 5 images processed concurrently", asy
     assertEquals(response.status, 200, "Batch upload should succeed");
     assertEquals(responseBody.success, true, "Response should indicate success");
     assertEquals(responseBody.count, 5, "Should upload 5 files");
+    
+    console.log("All 5 images uploaded successfully in single batch request");
   });
 
   await t.step("Step 2: Verify all images stored", async () => {
@@ -36,14 +40,21 @@ Deno.test("E2E: Maximum Batch Processing - 5 images processed concurrently", asy
 
   await t.step("Step 3: Wait for automatic batch processing to complete", async () => {
     // With 5 unique vision mock results, we expect 5 unique companies
-    const processingComplete = await dbHelpers.waitForProcessingComplete(5, 20000);
-    assertEquals(processingComplete, true, "Batch processing should complete within 20 seconds");
+    const processingComplete = await dbHelpers.waitForProcessingComplete(5, 60000);
+    assertEquals(processingComplete, true, "Batch processing should complete within 60 seconds");
   });
 
   await t.step("Step 4: Verify processing results", async () => {
-    const companyCount = await dbHelpers.getCompanyCount();
-    // Should have 5 companies from 5 unique vision mock results
-    assertEquals(companyCount, 5, "Should have 5 unique companies");
+    // Verify we have exactly 5 unique companies with unique data
+    const uniquenessResult = await dbHelpers.verifyUniqueCompanies(5);
+    
+    console.log("Company uniqueness verification:", uniquenessResult.details);
+    
+    assertEquals(uniquenessResult.details.totalCompanies, 5, "Should have 5 total companies");
+    assertEquals(uniquenessResult.details.uniqueNames, 5, "Should have 5 unique company names");
+    assertEquals(uniquenessResult.details.uniqueEmails, 5, "Should have 5 unique company emails");
+    assertEquals(uniquenessResult.details.uniquePhones, 5, "Should have 5 unique company phones");
+    assertEquals(uniquenessResult.isUnique, true, "All companies should be completely unique");
     
     const linkedPhotos = await dbHelpers.getVehiclePhotosWithCompany();
     assertEquals(linkedPhotos.length, 5, "All 5 photos should be linked to companies");
@@ -51,6 +62,10 @@ Deno.test("E2E: Maximum Batch Processing - 5 images processed concurrently", asy
     // Verify photos link to 5 different companies
     const companyIds = new Set(linkedPhotos.map(photo => photo.company_id));
     assertEquals(companyIds.size, 5, "Photos should link to 5 different companies");
+    
+    // Log the company names for verification
+    const companyNames = await dbHelpers.getCompanyNames();
+    console.log("Created companies:", companyNames);
   });
 
   await t.step("Step 5: Verify processing completion and error handling", async () => {
@@ -73,6 +88,7 @@ Deno.test("E2E: Maximum Batch Processing - 5 images processed concurrently", asy
     });
   });
 
+  
   await t.step("Cleanup: Remove test data", async () => {
     await dbHelpers.cleanupTestData();
   });

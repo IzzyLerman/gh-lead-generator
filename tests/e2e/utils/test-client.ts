@@ -23,7 +23,10 @@ export function getTestConfig(): TestConfig {
 export function createTestSupabaseClient() {
   const config = getTestConfig();
   return createClient(config.supabaseUrl, config.supabaseServiceRoleKey, {
-    auth: { autoRefreshToken: false }
+    auth: { 
+      autoRefreshToken: false,
+      persistSession: false
+    }
   });
 }
 

@@ -14,6 +14,9 @@ export class DatabaseTestHelpers {
     await this.supabase.from("companies").delete().gte("created_at", "1900-01-01");
     await this.supabase.from("vehicle-photos").delete().gte("created_at", "1900-01-01");
     
+    // Clean up test state table (for LLM mock atomicity)
+    await this.supabase.from("test_state").delete().gte("created_at", "1900-01-01");
+    
     // Clean up message queue
     await this.supabase.rpc("pgmq_purge_queue", { queue_name: "image-processing" });
     
@@ -126,5 +129,61 @@ export class DatabaseTestHelpers {
           .join(",")
       );
     return data || [];
+  }
+
+  async getAllCompanies() {
+    const { data } = await this.supabase
+      .from("companies")
+      .select("*")
+      .order("created_at", { ascending: true });
+    return data || [];
+  }
+
+  async verifyUniqueCompanies(expectedCount: number): Promise<{
+    isUnique: boolean;
+    details: {
+      totalCompanies: number;
+      uniqueNames: number;
+      uniqueEmails: number;
+      uniquePhones: number;
+      companies: any[];
+    }
+  }> {
+    const companies = await this.getAllCompanies();
+    
+    const names = new Set(companies.map(c => c.name).filter(Boolean));
+    const emails = new Set(companies.map(c => c.email).filter(Boolean));
+    const phones = new Set(companies.map(c => c.phone).filter(Boolean));
+    
+    const isUnique = companies.length === expectedCount && 
+                    names.size === expectedCount && 
+                    emails.size === expectedCount && 
+                    phones.size === expectedCount;
+    
+    return {
+      isUnique,
+      details: {
+        totalCompanies: companies.length,
+        uniqueNames: names.size,
+        uniqueEmails: emails.size,
+        uniquePhones: phones.size,
+        companies: companies.map(c => ({
+          name: c.name,
+          email: c.email,
+          phone: c.phone,
+          industry: c.industry
+        }))
+      }
+    };
+  }
+
+  async getCompanyNames(): Promise<string[]> {
+    const companies = await this.getAllCompanies();
+    return companies.map(c => c.name).filter(Boolean);
+  }
+
+  async getCompanyEmails(): Promise<string[]> {
+    const companies = await this.getAllCompanies();
+    return companies.map(c => c.email).filter(Boolean);
   }
 }
