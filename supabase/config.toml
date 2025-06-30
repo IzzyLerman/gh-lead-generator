@@ -31,7 +31,6 @@ entrypoint = "./functions/worker/index.ts"
 [storage.buckets."gh-vehicle-photos"]
 public = false
 file_size_limit = "50MiB"
-objects_path = "./seed_img"
 
 [db.vault]
 worker_url = "env(WORKER_URL)"
