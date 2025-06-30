@@ -127,12 +127,12 @@ jobs:
     - name: Wait for functions to be ready
       run: |
         echo "Waiting for functions to be ready..."
-        timeout 30s bash -c '
-          until curl -s $RECEIVE_EMAIL_URL > /dev/null; do
-            echo "Still waiting..."
+        timeout 30s bash -c "
+          until curl -s http://127.0.0.1:54321/functions/v1/receive-email > /dev/null; do
+            echo \"Still waiting...\"
             sleep 2
           done
-        '
+        "
       shell: bash
         
 
