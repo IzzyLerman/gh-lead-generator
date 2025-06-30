@@ -38,7 +38,6 @@ jobs:
 
   backend-and-e2e-tests:
     runs-on: ubuntu-latest
-    needs: [frontend-tests]
 
     steps:
     - uses: actions/checkout@v4
@@ -93,6 +92,12 @@ jobs:
         WORKER_URL: ${{ secrets.WORKER_URL }}
       run: deno test --allow-all ./supabase
 
+    - name: Create supabase env file
+      run: |
+        echo "WORKER_URL=${{ secrets.WORKER_URL }}" >> ./supabase/.env.local
+        echo "SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" >> ./supabase/.env.local
+        
+
     - name: Create functions env file
       run: |
         echo "SUPABASE_URL=http://127.0.0.1:54321" >> ./supabase/functions/.env.local
@@ -117,10 +122,18 @@ jobs:
         echo "E2E_REAL_APIS=true" >> ./supabase/functions/.env.local
 
     - name: Deploy functions locally
-      run: supabase functions serve --no-verify-jwt --env-file=./supabase/functions/.env.local > function_log.txt & 
+      run: supabase functions serve --no-verify-jwt --env-file=./supabase/functions/.env.local > ./tests/e2e/logs/functions_logs.txt & 
 
     - name: Wait for functions to be ready
-      run: sleep 3
+      run: |
+        echo "Waiting for functions to be ready..."
+        timeout 30s bash -c '
+          until curl -s $RECEIVE_EMAIL_URL > /dev/null; do
+            echo "Still waiting..."
+            sleep 2
+          done
+        '
+      shell: bash
         
 
     - name: Install dashboard dependencies
@@ -162,9 +175,6 @@ jobs:
         USE_MOCK_LLM: 'true'
         E2E_REAL_APIS: 'true'
       run: deno test --allow-all ./tests/e2e/
-
-    - name: Display Function Logs
-      run: echo "Displaying logs from function-log.txt:"; cat function_log.txt
 
     - name: Upload test artifacts
       if: always()
