@@ -24,6 +24,9 @@ jobs:
       with:
         version: latest
 
+    - name: Start Supabase CLI
+      run: supabase start
+
     - name: Link Supabase CLI to remote project
       env:
         SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
