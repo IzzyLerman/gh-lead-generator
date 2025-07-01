@@ -1,5 +1,6 @@
 import { createClient } from '@/utils/supabase/client'
 import { Tables } from '@/types/database'
+import { createLogger } from '@/utils/logger'
 
 export type CompanyWithContactsAndPhotos = Tables<'companies'> & {
   contacts: Tables<'contacts'>[]
@@ -23,6 +24,7 @@ export async function fetchCompaniesWithContactsAndPhotos(
   params: PaginationParams = {}
 ): Promise<PaginatedResult<CompanyWithContactsAndPhotos>> {
   const supabase = createClient()
+  const logger = createLogger('client-utils')
   const { page = 1, pageSize = 10 } = params
   
   const from = (page - 1) * pageSize
@@ -34,7 +36,7 @@ export async function fetchCompaniesWithContactsAndPhotos(
     .select('*', { count: 'exact', head: true })
 
   if (countError) {
-    console.error('Error fetching companies count:', countError)
+    logger.logError(countError, 'Error fetching companies count', { page, pageSize })
     throw new Error('Failed to fetch companies count')
   }
 
@@ -52,7 +54,7 @@ export async function fetchCompaniesWithContactsAndPhotos(
     .range(from, to)
 
   if (error) {
-    console.error('Error fetching companies with contacts and photos:', error)
+    logger.logError(error, 'Error fetching companies with contacts and photos', { page, pageSize, from, to })
     throw new Error('Failed to fetch companies data')
   }
 

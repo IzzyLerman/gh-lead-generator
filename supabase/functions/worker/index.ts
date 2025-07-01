@@ -8,6 +8,7 @@ import { Database } from './../_shared/database.types.ts'
 import { ParsedCompanyDataSchema, ParsedCompanyData } from "./../_shared/schema.ts";
 import { mockVisionAPI } from "./vision-mocks.ts";
 import { mockLLMAPI } from "./llm-mocks.ts";
+import { createLogger } from './../_shared/logger.ts'
 
 const CONSTANTS = {
   BATCH_SIZE: 5,
@@ -26,9 +27,8 @@ function getEnvVar(key: string): string {
   return value;
 }
 
-function log(message: string, ...args: unknown[]) {
-  console.log(`[worker] ${message}`, ...args);
-}
+// Initialize logger
+const logger = createLogger('worker');
 
 interface VisionAPIRequest {
   image: { source: { imageUri: string } };
@@ -123,7 +123,10 @@ interface UpsertResult {
 export const upsertCompany = async (supabase: SupabaseClient<Database>, company: CompanyUpsertData) => {
   if (!supabase || !company.name) {
     const errorMessage = "Supabase client and company name are required.";
-    log(errorMessage);
+    logger.error('Invalid upsert parameters', {
+      hasSupabase: !!supabase,
+      hasCompanyName: !!company.name
+    });
     return { data: null, success: false, error: { message: errorMessage } };
   }
 
@@ -142,12 +145,12 @@ export const upsertCompany = async (supabase: SupabaseClient<Database>, company:
       throw(error);
     }
 
-    log(`Successfully upserted company: ${company.name}`);
+    logger.info('Company upserted successfully', { companyName: company.name });
     return { data, success: true, error: null };
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log(`Error upserting company '${company.name}':`, errorMessage);
+    logger.logError(error instanceof Error ? error : new Error(String(error)), 'Error upserting company', { companyName: company.name });
     return { data: null, success: false, error };
   }
 };
@@ -185,7 +188,10 @@ export async function generateSignedUrls(supabase: SupabaseClient<Database>, mes
     // Filter out test messages and messages without image_path
     const validMessages = messages.filter(message => message.message?.image_path);
     if (validMessages.length === 0) {
-        log(`No valid messages with image_path found out of ${messages.length} total`);
+        logger.info('No valid messages with image_path found', {
+          totalMessages: messages.length,
+          validMessages: 0
+        });
         return { urls: null, num: 0 };
     }
 
@@ -202,7 +208,10 @@ export async function generateSignedUrls(supabase: SupabaseClient<Database>, mes
     );
 
     const signedUrls = await Promise.all(signedUrlPromises);
-    log(`Processing ${signedUrls.length} messages`);
+    logger.info('Generated signed URLs for processing', {
+      messageCount: signedUrls.length,
+      totalRequested: messages.length
+    });
     return { urls: signedUrls, num: signedUrls.length };
 }
 
@@ -212,20 +221,36 @@ async function deleteMessage(pgmq_public: SupabaseClient<Database, 'pgmq_public'
         message_id: message.msg_id,
     });
     if (error) {
-        log('Error deleting message:', error);
+        logger.logError(error, 'Error deleting message', {
+          messageId: message.msg_id,
+          imagePath: message.message.image_path
+        });
         throw error;
+    } else {
+        logger.debug('Message deleted successfully', {
+          messageId: message.msg_id
+        });
     }
 }
 
 async function archiveMessage(pgmq_public: SupabaseClient<Database, 'pgmq_public'>, message: QueueMessage) {
-    log(`Fatal error processing image. Archiving message with image_path: ${message.message.image_path}`);
+    logger.warn('Fatal error processing image - archiving message', {
+      messageId: message.msg_id,
+      imagePath: message.message.image_path
+    });
     const { error } = await pgmq_public.rpc('archive', {
         queue_name: CONSTANTS.QUEUE_NAME,
         message_id: message.msg_id,
     });
     if (error) {
-        log('Error archiving message:', error);
+        logger.logError(error, 'Error archiving message', {
+          messageId: message.msg_id
+        });
         throw error;
+    } else {
+        logger.info('Message archived successfully', {
+          messageId: message.msg_id
+        });
     }
 }
 
@@ -244,11 +269,16 @@ export async function enqueueForContactEnrichment(pgmq_public: SupabaseClient<Da
     });
 
     if (error) {
-        log('Error enqueueing company for contact enrichment:', error);
+        logger.logError(error, 'Error enqueueing company for contact enrichment', {
+          companyId
+        });
         throw error;
     }
 
-    log(`Successfully enqueued company ${companyId} for contact enrichment`);
+    logger.info('Company enqueued for contact enrichment', {
+      companyId,
+      queue: CONSTANTS.CONTACT_QUEUE_NAME
+    });
 }
 
 const OCR_PROMPT = {
@@ -302,13 +332,24 @@ export async function processOCRWithLLM(ocrResponses: VisionAPIResponse[], llmAP
     };
   });
 
-  const llmPromises = llmRequests.map(async (request) => {
-    log("LLM request:", request);
+  const llmPromises = llmRequests.map(async (request, idx) => {
+    logger.debug('Sending LLM request', {
+      requestIndex: idx,
+      model: request.model,
+      maxTokens: request.max_tokens,
+      messageCount: request.messages.length
+      // NOTE: Not logging actual OCR content for security
+    });
     return await llmAPI(request, apiUrl, apiKey);
   });
 
   const llmResults = await Promise.all(llmPromises);
-  log("LLM results:", JSON.stringify(llmResults));
+  logger.info('LLM processing completed', {
+    requestCount: llmRequests.length,
+    resultCount: llmResults.length,
+    successCount: llmResults.filter(r => r.content?.[0]?.text).length
+    // NOTE: Not logging actual parsed content for security
+  });
 
   return llmResults.map((res, idx) => {
     if (!res.content?.[0]?.text) {
@@ -317,7 +358,11 @@ export async function processOCRWithLLM(ocrResponses: VisionAPIResponse[], llmAP
     const parsed = JSON.parse(res.content[0].text);
     const result = ParsedCompanyDataSchema.safeParse(parsed);
     if (!result.success) {
-      log(`LLM output validation failed for message #${idx}: ${result.error.message}`);
+      logger.error('LLM output validation failed', {
+        messageIndex: idx,
+        errorMessage: result.error.message,
+        errorCount: result.error.errors?.length || 0
+      });
       throw new Error(`LLM output validation failed: ${result.error.message}`);
     }
     return parsed;
@@ -344,7 +389,7 @@ async function processMessages(companies: CompanyUpsertData[], messages: QueueMe
       const result = await upsertCompany(supabase, company);
       
       if (!result.success) {
-        log("Error upserting company", company.name, ":", result.error);
+        logger.error('Error upserting company', { companyName: company.name, error: result.error });
         
         // Mark photo as failed
         await supabase
@@ -354,7 +399,7 @@ async function processMessages(companies: CompanyUpsertData[], messages: QueueMe
           
         await archiveMessage(pgmq_public, message);
       } else {
-      log("Successfully upserted", company.name);
+      logger.info('Successfully upserted company', { companyName: company.name });
       
       // Extract company_id and insert flag from the new return format
       const upsertResult = result.data as unknown as UpsertResult;
@@ -372,19 +417,31 @@ async function processMessages(companies: CompanyUpsertData[], messages: QueueMe
         .eq('name', pathname);
       
       if (updateError) {
-        log("Error updating vehicle_photos with company_id:", updateError);
+        logger.logError(updateError, 'Error updating vehicle_photos with company_id', {
+          companyId,
+          imagePath: pathname
+        });
         throw updateError; // Re-throw to trigger failure handling
       } else {
-        log("Successfully linked vehicle photo to company and marked as processed");
+        logger.debug('Vehicle photo linked to company and marked as processed', {
+          companyId,
+          imagePath: pathname
+        });
       }
       
       // Only enqueue for contact enrichment if this was a new company (insert)
       if (wasInsert) {
         try {
           await enqueueForContactEnrichment(pgmq_public, companyId);
-          log(`Enqueued new company ${company.name} for contact enrichment`);
+          logger.info('New company enqueued for contact enrichment', {
+            companyName: company.name,
+            companyId
+          });
         } catch (error) {
-          log("Error enqueueing company for contact enrichment:", error);
+          logger.logError(error instanceof Error ? error : new Error(String(error)), 'Error enqueueing company for contact enrichment', {
+            companyName: company.name,
+            companyId
+          });
           // Don't fail the entire process if enqueueing fails
         }
       }
@@ -392,7 +449,11 @@ async function processMessages(companies: CompanyUpsertData[], messages: QueueMe
       await deleteMessage(pgmq_public, message);
       }
     } catch (error) {
-      log("Error processing message:", error);
+      logger.logError(error instanceof Error ? error : new Error(String(error)), 'Error processing message', {
+        messageId: message.msg_id,
+        imagePath: pathname,
+        companyName: company.name
+      });
       
       // Mark photo as failed
       await supabase
@@ -405,6 +466,11 @@ async function processMessages(companies: CompanyUpsertData[], messages: QueueMe
   });
 
   await Promise.all(processPromises);
+  
+  logger.info('Batch processing completed', {
+    messageCount: messages.length,
+    processedCount: processPromises.length
+  });
 }
 
 export const handler = async (req: Request, overrides?: {
@@ -413,6 +479,10 @@ export const handler = async (req: Request, overrides?: {
     callLLMAPI?: typeof callLLMAPI,
     generateSignedUrls?: typeof generateSignedUrls
 }) => {
+    logger.info('Worker function started', {
+      method: req.method,
+      hasOverrides: !!overrides
+    });
     const envVars = {
       SUPABASE_URL: getEnvVar('SUPABASE_URL'),
       SUPABASE_SERVICE_ROLE_KEY: getEnvVar('SUPABASE_SERVICE_ROLE_KEY'),
@@ -439,16 +509,20 @@ export const handler = async (req: Request, overrides?: {
     const url = overrides?.generateSignedUrls ?? generateSignedUrls;
 
     try {
+      logger.step('Dequeuing messages from queue');
       const { data: messages } = await dequeue(pgmq_public, CONSTANTS.BATCH_SIZE);
       const { urls: signedUrls, num } = await url(supabase, messages);
 
       if (num === 0) {
+          logger.info('No new messages to process');
           return new Response(JSON.stringify({ 
               status: 200,
               headers: { 'Content-Type': 'application/json' },
               message: 'No new messages'
           }));
       }
+      
+      logger.step('Starting OCR processing', { messageCount: num });
 
       const ocrRequests = signedUrls!.map(signedUrl => ({
           image: { source: { imageUri: signedUrl.signedUrl } },
@@ -463,10 +537,15 @@ export const handler = async (req: Request, overrides?: {
 
       ocrResponses.forEach((res, i) => {
           if (res.error) {
-              log(`Error in OCR response #${i}:`, res.error);
+              logger.error('Error in OCR response', {
+                responseIndex: i,
+                errorCode: res.error.code,
+                errorMessage: res.error.message
+              });
           }
       });
 
+      logger.step('Processing OCR results with LLM');
       const parsedCompanies = await processOCRWithLLM(
         ocrResponses, 
         llm, 
@@ -474,11 +553,19 @@ export const handler = async (req: Request, overrides?: {
         envVars.ANTHROPIC_API_KEY
       );
 
+      logger.step('Normalizing company data');
       const normalizedCompanies = normalizeCompanyData(parsedCompanies);
-
+      
+      logger.step('Processing messages and upserting companies');
       await processMessages(normalizedCompanies, messages, supabase, pgmq_public);
+      
+      logger.info('Worker function completed successfully', {
+        processedMessages: messages.length,
+        companiesFound: normalizedCompanies.length
+      });
 
     } catch (error) {
+      logger.logError(error instanceof Error ? error : new Error(String(error)), 'Worker function failed');
       return new Response(
         JSON.stringify({ error: error instanceof Error ? error.message : String(error) }),
         {

@@ -1,33 +1,33 @@
 import { createClient } from '@/utils/supabase/client'
 import { Tables } from '@/types/database'
+import { createLogger } from '@/utils/logger'
 
 const BUCKET_NAME = 'gh-vehicle-photos'
 
 export async function getSignedImageUrl(fileName: string): Promise<string | null> {
   const supabase = createClient()
+  const logger = createLogger('image-utils')
   
   try {
-    console.log('Getting signed URL for:', fileName)
+    logger.debug('Getting signed URL for image', { fileName })
     const { data, error } = await supabase.storage
       .from(BUCKET_NAME)
       .createSignedUrl(fileName, 60 * 60) // 1 hour expiry
 
     if (error) {
-      console.error('Error creating signed URL:', error)
-      console.error('Error details:', JSON.stringify(error, null, 2))
+      logger.logError(error, 'Error creating signed URL', { fileName })
       return null
     }
 
     if (!data?.signedUrl) {
-      console.error('No signed URL returned for:', fileName)
+      logger.error('No signed URL returned', { fileName })
       return null
     }
 
-    console.log('Successfully created signed URL for:', fileName)
+    logger.debug('Successfully created signed URL', { fileName })
     return data.signedUrl
   } catch (error) {
-    console.error('Error in getSignedImageUrl:', error)
-    console.error('Error stack:', error)
+    logger.logError(error as Error, 'Error in getSignedImageUrl', { fileName })
     return null
   }
 }
@@ -44,6 +44,7 @@ export async function getPublicImageUrl(fileName: string): Promise<string> {
 
 export async function downloadImage(fileName: string): Promise<Blob | null> {
   const supabase = createClient()
+  const logger = createLogger('image-utils')
   
   try {
     const { data, error } = await supabase.storage
@@ -51,13 +52,13 @@ export async function downloadImage(fileName: string): Promise<Blob | null> {
       .download(fileName)
 
     if (error) {
-      console.error('Error downloading image:', error)
+      logger.logError(error, 'Error downloading image', { fileName })
       return null
     }
 
     return data
   } catch (error) {
-    console.error('Error in downloadImage:', error)
+    logger.logError(error as Error, 'Error in downloadImage', { fileName })
     return null
   }
 }
@@ -71,16 +72,18 @@ export function getDownloadFileName(vehiclePhoto: Tables<'vehicle-photos'>): str
 }
 
 export async function triggerImageDownload(fileName: string, displayName?: string) {
+  const logger = createLogger('image-utils')
+  
   try {
     const signedUrl = await getSignedImageUrl(fileName)
     if (!signedUrl) {
-      console.error('Failed to get signed URL for download')
+      logger.error('Failed to get signed URL for download', { fileName })
       return
     }
 
     const response = await fetch(signedUrl)
     if (!response.ok) {
-      console.error('Failed to fetch image for download')
+      logger.error('Failed to fetch image for download', { fileName, status: response.status })
       return
     }
 
@@ -96,16 +99,18 @@ export async function triggerImageDownload(fileName: string, displayName?: strin
     document.body.removeChild(link)
     window.URL.revokeObjectURL(url)
   } catch (error) {
-    console.error('Error downloading image:', error)
+    logger.logError(error as Error, 'Error downloading image', { fileName, displayName })
   }
 }
 
 export function openImageInNewTab(fileName: string) {
+  const logger = createLogger('image-utils')
+  
   getSignedImageUrl(fileName).then(signedUrl => {
     if (signedUrl) {
       window.open(signedUrl, '_blank')
     } else {
-      console.error('Failed to get signed URL for new tab')
+      logger.error('Failed to get signed URL for new tab', { fileName })
     }
   })
 }

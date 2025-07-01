@@ -7,6 +7,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import ExifReader from 'https://esm.sh/exifreader@4';
 import { Database } from './../_shared/database.types.ts'
+import { createLogger } from './../_shared/logger.ts'
 
 interface CloudinaryUploadResponse {
   public_id: string;
@@ -36,9 +37,8 @@ function getEnvVar(key: string): string {
   return value;
 }
 
-function log(message: string, ...args: unknown[]) {
-  console.log(`[receive-email] ${message}`, ...args);
-}
+// Initialize logger
+const logger = createLogger('receive-email');
 
 async function verifySignature(body: ArrayBuffer, timestamp: string, signature: string, secret: string): Promise<boolean> {
   try {
@@ -47,9 +47,17 @@ async function verifySignature(body: ArrayBuffer, timestamp: string, signature: 
     const requestTime = parseInt(timestamp) * 1000;
     
     if (now - requestTime > timeLimit) {
-      log('Request timestamp too old');
+      logger.warn('Request timestamp too old', { 
+        requestTime: new Date(requestTime).toISOString(),
+        timeDiff: now - requestTime
+      });
       return false;
     }
+    
+    logger.debug('Timestamp validation passed', {
+      requestTime: new Date(requestTime).toISOString(),
+      timeDiff: now - requestTime
+    });
     
     const encoder = new TextEncoder();
     const keyData = encoder.encode(secret);
@@ -70,21 +78,36 @@ async function verifySignature(body: ArrayBuffer, timestamp: string, signature: 
       .map(b => b.toString(16).padStart(2, '0'))
       .join('');
     
-    return calculatedHex === signature;
+    const isValid = calculatedHex === signature;
+    logger.debug('Signature verification completed', {
+      isValid,
+      signatureLength: signature.length,
+      calculatedLength: calculatedHex.length
+    });
+    
+    return isValid;
   } catch (error) {
-    log('Signature verification error:', error);
+    logger.logError(error instanceof Error ? error : new Error(String(error)), 'Signature verification failed');
     return false;
   }
 }
 
 async function verifyContentBasedSignature(attachments: File[], senderEmail: string, timestamp: string, signature: string, secret: string): Promise<boolean> {
   try {
+    logger.debug('Starting content-based signature verification', {
+      attachmentCount: attachments.length,
+      senderEmailDomain: senderEmail.split('@')[1] || '[unknown]'
+    });
+    
     const timeLimit = 30 * 60 * 1000; // 30 minutes
     const now = Date.now();
     const requestTime = parseInt(timestamp) * 1000;
     
     if (now - requestTime > timeLimit) {
-      log('Request timestamp too old');
+      logger.warn('Request timestamp too old in content verification', {
+        requestTime: new Date(requestTime).toISOString(),
+        timeDiff: now - requestTime
+      });
       return false;
     }
     
@@ -153,9 +176,18 @@ async function verifyContentBasedSignature(attachments: File[], senderEmail: str
       .map(b => b.toString(16).padStart(2, '0'))
       .join('');
     
-    return calculatedHex === signature;
+    const isValid = calculatedHex === signature;
+    logger.debug('Content-based signature verification completed', {
+      isValid,
+      payloadSize: signaturePayload.length,
+      attachmentCount: attachments.length
+    });
+    
+    return isValid;
   } catch (error) {
-    log('Content-based signature verification error:', error);
+    logger.logError(error instanceof Error ? error : new Error(String(error)), 'Content-based signature verification failed', {
+      attachmentCount: attachments.length
+    });
     return false;
   }
 }
@@ -176,6 +208,12 @@ async function generateSignature(params: Record<string, string | number>, apiSec
 }
 
 async function uploadToCloudinary(videoFile: File): Promise<CloudinaryUploadResponse> {
+  logger.debug('Starting Cloudinary upload', {
+    filename: videoFile.name,
+    type: videoFile.type,
+    size: videoFile.size
+  });
+  
   const CLOUDINARY_CLOUD_NAME = getEnvVar("CLOUDINARY_CLOUD_NAME");
   const CLOUDINARY_API_KEY = getEnvVar("CLOUDINARY_API_KEY");
   const CLOUDINARY_API_SECRET = getEnvVar("CLOUDINARY_API_SECRET");
@@ -186,6 +224,7 @@ async function uploadToCloudinary(videoFile: File): Promise<CloudinaryUploadResp
   };
 
   const signature = await generateSignature(params, CLOUDINARY_API_SECRET);
+  logger.debug('Generated Cloudinary signature', { timestamp });
 
   const formData = new FormData();
   formData.append('file', videoFile);
@@ -203,10 +242,22 @@ async function uploadToCloudinary(videoFile: File): Promise<CloudinaryUploadResp
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Cloudinary upload failed: ${response.status} ${errorText}`);
+    logger.error('Cloudinary upload failed', {
+      status: response.status,
+      filename: videoFile.name,
+      responseLength: errorText.length
+    });
+    throw new Error(`Cloudinary upload failed: ${response.status}`);
   }
 
-  return await response.json() as CloudinaryUploadResponse;
+  const result = await response.json() as CloudinaryUploadResponse;
+  logger.debug('Cloudinary upload successful', {
+    publicId: result.public_id,
+    format: result.format,
+    bytes: result.bytes
+  });
+  
+  return result;
 }
 
 async function destroyCloudinaryResource(publicId: string, resourceType: 'image' | 'video' = 'video'): Promise<void> {
@@ -250,14 +301,25 @@ async function destroyCloudinaryResource(publicId: string, resourceType: 'image'
 }
 
 function validateFile(file: File) {
+  logger.debug('Validating file', {
+    filename: file.name,
+    type: file.type,
+    size: file.size
+  });
+  
   const allowedTypes = ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/heic", "video/mp4", "video/mov"];
   const maxSize = 50 * 1024 * 1024; 
+  
   if (!allowedTypes.includes(file.type)) {
+    logger.error('Invalid file type', { type: file.type, filename: file.name });
     throw new Error(`Invalid file type: ${file.type}`);
   }
   if (file.size > maxSize) {
+    logger.error('File too large', { size: file.size, filename: file.name, maxSize });
     throw new Error(`File too large: ${file.size}`);
   }
+  
+  logger.debug('File validation passed', { filename: file.name });
 }
 
 function generateUniqueFilename(originalName: string): string {
@@ -268,6 +330,11 @@ function generateUniqueFilename(originalName: string): string {
 
 async function convertHeicToJpg(heicFile: File): Promise<File> {
   try {
+    logger.debug('Starting HEIC to JPG conversion', {
+      filename: heicFile.name,
+      originalSize: heicFile.size
+    });
+    
     const arrayBuffer = await heicFile.arrayBuffer();
     const uint8Array = new Uint8Array(arrayBuffer);
     
@@ -281,25 +348,49 @@ async function convertHeicToJpg(heicFile: File): Promise<File> {
     });
     
     const filename = heicFile.name.replace(/\.heic$/i, '.jpg');
-    return new File([jpegBuffer], filename, { type: 'image/jpeg' });
+    const convertedFile = new File([jpegBuffer], filename, { type: 'image/jpeg' });
+    
+    logger.debug('HEIC conversion successful', {
+      originalFilename: heicFile.name,
+      convertedFilename: filename,
+      originalSize: heicFile.size,
+      convertedSize: convertedFile.size
+    });
+    
+    return convertedFile;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log(`Error converting HEIC to JPG: ${errorMessage}`);
+    logger.logError(error instanceof Error ? error : new Error(String(error)), 'HEIC conversion failed', {
+      filename: heicFile.name,
+      originalSize: heicFile.size
+    });
     throw new Error(`Failed to convert HEIC file ${heicFile.name}: ${errorMessage}`);
   }
 }
 
 async function extractVideoFrameFromCloudinary(videoFile: File): Promise<File> {
   try {
+    logger.debug('Starting video frame extraction', {
+      filename: videoFile.name,
+      type: videoFile.type,
+      size: videoFile.size
+    });
+    
     const CLOUDINARY_CLOUD_NAME = getEnvVar("CLOUDINARY_CLOUD_NAME");
     
     const uploadResponse = await uploadToCloudinary(videoFile);
     
     const publicId = uploadResponse["public_id"];
+    logger.debug('Video uploaded, extracting frame', { publicId });
     
     const response = await fetch(`https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/so_1,f_jpg/${publicId}.jpg`);
     
     if (!response.ok) {
+      logger.error('Failed to download video thumbnail', {
+        status: response.status,
+        statusText: response.statusText,
+        publicId
+      });
       throw new Error(`Failed to download thumbnail: ${response.status} ${response.statusText}`);
     }
     
@@ -308,38 +399,75 @@ async function extractVideoFrameFromCloudinary(videoFile: File): Promise<File> {
     const filename = videoFile.name.replace(/\.(mp4|mov)$/i, '.jpg');
     const resultFile = new File([frameBlob], filename, { type: 'image/jpeg' });
     
+    logger.debug('Video frame extracted successfully', {
+      originalFilename: videoFile.name,
+      frameFilename: filename,
+      originalSize: videoFile.size,
+      frameSize: resultFile.size
+    });
     
-    // 5. Clean up video from Cloudinary to save storage
+    // Clean up video from Cloudinary to save storage
     await destroyCloudinaryResource(uploadResponse.public_id, 'video');
+    logger.debug('Cloudinary video cleanup completed', { publicId });
     
     return resultFile;
     
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log(`Error extracting video frame: ${errorMessage}`);
+    logger.logError(error instanceof Error ? error : new Error(String(error)), 'Video frame extraction failed', {
+      filename: videoFile.name,
+      type: videoFile.type
+    });
     throw new Error(`Failed to extract frame from video ${videoFile.name}: ${errorMessage}`);
   }
 }
 
 async function processFileForVision(file: File, videoFrameExtractor?: typeof extractVideoFrameFromCloudinary): Promise<File> {
+  logger.debug('Processing file for vision', {
+    filename: file.name,
+    type: file.type,
+    needsProcessing: file.type === 'image/heic' || file.type === 'video/mp4' || file.type === 'video/mov'
+  });
+  
   if (file.type === 'image/heic') {
     return await convertHeicToJpg(file);
   } else if (file.type === 'video/mp4' || file.type === 'video/mov') {
     const extractor = videoFrameExtractor ?? extractVideoFrameFromCloudinary;
     return await extractor(file);
   } else {
+    logger.debug('File requires no processing', { filename: file.name, type: file.type });
     return file;
   }
 }
 
 async function uploadFileToStorage(supabase: SupabaseClient<Database>, file: File, filename: string) {
+  logger.debug('Uploading file to storage', {
+    filename,
+    originalFilename: file.name,
+    type: file.type,
+    size: file.size
+  });
+  
   const { data, error } = await supabase.storage
     .from("gh-vehicle-photos")
     .upload(filename, file, {
       contentType: file.type,
       upsert: true,
     });
-  if (error) throw error;
+    
+  if (error) {
+    logger.error('Storage upload failed', {
+      filename,
+      error: error.message
+    });
+    throw error;
+  }
+  
+  logger.debug('File uploaded to storage successfully', {
+    filename,
+    path: data.path
+  });
+  
   return data;
 }
 
@@ -375,9 +503,16 @@ function convertDMSToDD(dmsArray: any[], direction: string): number {
 
 async function extractLocationFromExif(file: File): Promise<string | null> {
   try {
+    logger.debug('Extracting EXIF location data', {
+      filename: file.name,
+      type: file.type,
+      size: file.size
+    });
+    
     // Check if file is an image format that can contain EXIF data
     const supportedTypes = ['image/jpeg', 'image/jpg', 'image/tiff', 'image/tif', 'image/heic', 'image/heif'];
     if (!supportedTypes.includes(file.type.toLowerCase())) {
+        logger.debug('File type does not support EXIF', { type: file.type });
         return null;
     }
 
@@ -386,6 +521,11 @@ async function extractLocationFromExif(file: File): Promise<string | null> {
     const tags = ExifReader.load(arrayBuffer, {
       includeUnknown: false,
       expanded: false
+    });
+    
+    logger.debug('EXIF tags loaded', {
+      tagCount: Object.keys(tags).length,
+      hasGPS: !!(tags.GPSLatitude && tags.GPSLongitude)
     });
     
     
@@ -416,24 +556,36 @@ async function extractLocationFromExif(file: File): Promise<string | null> {
             const finalLon = (lonRef === 'W' || lonRef === 'West') ? -lon : lon;
             
             const locationString = `${finalLat.toFixed(6)}, ${finalLon.toFixed(6)}`;
+            
+            logger.debug('GPS coordinates extracted successfully', {
+              filename: file.name,
+              coordinates: locationString,
+              latRef,
+              lonRef
+            });
+            
             return locationString;
           } else {
+            logger.debug('Invalid GPS coordinate values', { lat, lon });
             return null;
           }
         } else {
+          logger.debug('Missing GPS coordinate components');
           return null;
         }
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        log(`Error processing GPS coordinates from ${file.name || 'unknown file'}: ${errorMessage}`);
+        logger.warn('Error processing GPS coordinates', {
+          filename: file.name,
+          error: error instanceof Error ? error.message : String(error)
+        });
         return null;
       }
     } else {
+      logger.debug('No GPS data found in EXIF', { filename: file.name });
       return null;
     }
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    log(`Error reading EXIF data from ${file.name || 'unknown file'}: ${errorMessage}`);
+    logger.logError(error instanceof Error ? error : new Error(String(error)), 'Error reading EXIF data', { filename: file.name });
     return null;
   }
 }
@@ -485,7 +637,7 @@ async function reverseGeocode(lat: number, lon: number): Promise<string | null> 
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log(`Error in reverse geocoding: ${errorMessage}`);
+    logger.error(`Error in reverse geocoding`, { errorMessage });
     return null;
   }
 }
@@ -516,7 +668,7 @@ async function uploadFileAndCreateRecord(
     });
     
   if (insertError) {
-    log(`Error inserting vehicle-photos record: ${JSON.stringify(insertError)}`);
+    logger.error('Error inserting vehicle-photos record', { insertError });
     throw new Error(`Failed to insert vehicle-photos record: ${insertError.message || JSON.stringify(insertError)}`);
   }
   
@@ -556,7 +708,7 @@ async function processAttachments(
   }
 
   if (attachments.length === 0) {
-    log("No attachments found");
+    logger.info("No attachments found");
     return new Response(JSON.stringify({ error: "No attachments found" }), { status: 400, headers: { "Content-Type": "application/json" } });
   }
 
@@ -584,7 +736,7 @@ async function processAttachments(
               streetAddress = await geocoder(lat, lon);
             } catch (error) {
               const errorMessage = error instanceof Error ? error.message : String(error);
-              log(`Reverse geocoding failed: ${errorMessage}, using coordinates only`);
+              logger.warn('Reverse geocoding failed, using coordinates only', { errorMessage });
             }
           }
         }
@@ -601,13 +753,13 @@ async function processAttachments(
       await enqueue(pgmq_public, uploadData.path);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
-      log(`Failed to process file ${file.name}: ${errorMessage}`);
+      logger.error('Failed to process file', { filename: file.name, errorMessage });
       errors.push(`${file.name}: ${errorMessage}`);
     }
   }
 
   if (uploadedPaths.length === 0) {
-    log("No files were successfully processed");
+    logger.error("No files were successfully processed");
     return new Response(JSON.stringify({ 
       error: "No files could be processed", 
       errors: errors 
@@ -675,7 +827,7 @@ export const handler = async (
   // WEBHOOK_SECRET is required for security
   const webhookSecret = Deno.env.get("WEBHOOK_SECRET");
   if (!webhookSecret) {
-    log('WEBHOOK_SECRET environment variable is required');
+    logger.error('WEBHOOK_SECRET environment variable is required');
     return new Response(JSON.stringify({ error: "Server configuration error" }), { 
       status: 500, 
       headers: { "Content-Type": "application/json" } 
@@ -688,7 +840,7 @@ export const handler = async (
     const signature = req.headers.get('X-Signature');
     
     if (!timestamp || !signature) {
-      log('Missing authentication headers');
+      logger.warn('Missing authentication headers');
       return new Response(JSON.stringify({ error: "Missing authentication headers" }), { 
         status: 401, 
         headers: { "Content-Type": "application/json" } 
@@ -711,7 +863,7 @@ export const handler = async (
     const isValid = await verifyContentBasedSignature(attachments, senderEmail, timestamp, signature, webhookSecret);
     
     if (!isValid) {
-      log('Invalid signature or timestamp');
+      logger.warn('Invalid signature or timestamp');
       return new Response(JSON.stringify({ error: "Invalid authentication" }), { 
         status: 401, 
         headers: { "Content-Type": "application/json" } 
@@ -721,7 +873,7 @@ export const handler = async (
     return await processAttachments(attachments, senderEmail, supabase, pgmq_public, enqueue, videoFrameExtractor, reverseGeocoder);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log(`Error: ${errorMessage}`);
+    logger.error('Handler error', { errorMessage });
     return new Response(JSON.stringify({ error: errorMessage }), {
       status: 500,
       headers: { "Content-Type": "application/json" },

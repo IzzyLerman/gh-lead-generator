@@ -4,6 +4,10 @@ const FormData = require('form-data');
 const fetch = require('node-fetch');
 const crypto = require('crypto');
 const { fromBuffer: fileTypeFromBuffer } = require('file-type');
+// Conditional import for local vs production environment
+const isProduction = process.env.ENVIRONMENT === 'production';
+const loggerPath = isProduction ? '~/utils/logger.js' : './utils/logger';
+const { createLogger } = require(loggerPath);
 
 // Defer S3 client creation to allow for mocking in tests
 let s3 = null;
@@ -29,13 +33,12 @@ function generateSignature(body, timestamp, secret) {
   return crypto.createHmac('sha256', secret).update(message).digest('hex');
 }
 
-function log(message, ...args) {
-  console.log(`[${new Date().toISOString()}] ${message}`, ...args);
-}
+// Initialize logger
+const logger = createLogger('email-processor');
 
 async function readEmailFromS3(bucketName, key) {
   try {
-    log(`Reading email from S3: ${bucketName}/${key}`);
+    logger.info('Reading email from S3', { bucket: bucketName, key });
     const params = {
       Bucket: bucketName,
       Key: key
@@ -44,7 +47,7 @@ async function readEmailFromS3(bucketName, key) {
     const result = await getS3Client().getObject(params).promise();
     return result.Body;
   } catch (error) {
-    log(`Error reading email from S3: ${error.message}`);
+    logger.logError(error, 'Error reading email from S3', { bucket: bucketName, key });
     throw error;
   }
 }
@@ -59,15 +62,17 @@ async function detectFileType(attachment) {
 
 async function parseEmailAndExtractAttachments(emailBuffer) {
   try {
-    log('Parsing email content');
+    logger.step('Parsing email content');
     const parsed = await simpleParser(emailBuffer);
     
-    log(`Email parsed. Subject: ${parsed.subject}`);
-    log(`Attachments found: ${parsed.attachments ? parsed.attachments.length : 0}`);
+    logger.info('Email parsed successfully', { 
+      subject: parsed.subject,
+      attachmentCount: parsed.attachments ? parsed.attachments.length : 0
+    });
     
     // Extract sender email address
     const senderEmail = parsed.from?.value?.[0]?.address || parsed.from?.text || 'unknown';
-    log(`Sender: ${senderEmail}`);
+    logger.debug('Extracted sender email', { senderEmail });
     
     if (!parsed.attachments || parsed.attachments.length === 0) {
       return { attachments: [], senderEmail };
@@ -95,7 +100,11 @@ async function parseEmailAndExtractAttachments(emailBuffer) {
           isSupported = finalMimeType && SUPPORTED_TYPES.includes(finalMimeType);
         }
       } catch (error) {
-        log(`Error detecting file type for ${attachment.filename}: ${error.message}`);
+        logger.warn('Error detecting file type', { 
+          filename: attachment.filename,
+          declaredType: attachment.contentType,
+          error: error.message
+        });
         // Fall back to declared content type on error
         isSupported = finalMimeType && SUPPORTED_TYPES.includes(finalMimeType);
       }
@@ -106,11 +115,17 @@ async function parseEmailAndExtractAttachments(emailBuffer) {
           contentType: finalMimeType // Use the final determined mime type
         });
       } else if (finalMimeType) {
-        log(`Skipping unsupported attachment type: ${finalMimeType}`);
+        logger.debug('Skipping unsupported attachment', { 
+          filename: attachment.filename,
+          mimeType: finalMimeType
+        });
       }
     }
     
-    log(`Filtered attachments: ${supportedAttachments.length}`);
+    logger.info('Email processing completed', { 
+      supportedAttachments: supportedAttachments.length,
+      totalProcessed: parsed.attachments ? parsed.attachments.length : 0
+    });
     
     return {
       attachments: supportedAttachments.map(attachment => ({
@@ -121,7 +136,7 @@ async function parseEmailAndExtractAttachments(emailBuffer) {
       senderEmail
     };
   } catch (error) {
-    log(`Error parsing email: ${error.message}`);
+    logger.logError(error, 'Error parsing email');
     throw error;
   }
 }
@@ -129,18 +144,21 @@ async function parseEmailAndExtractAttachments(emailBuffer) {
 async function sendAttachmentsToEndpoint(attachments, senderEmail, receiveEmailUrl, webhookSecret) {
   try {
     if (attachments.length === 0) {
-      log('No attachments to send');
+      logger.info('No attachments to send');
       return { success: true, message: 'No attachments found', processed: 0 };
     }
     
-    log(`Sending ${attachments.length} attachments to ${receiveEmailUrl}`);
+    logger.step('Sending attachments to endpoint', { 
+      attachmentCount: attachments.length,
+      hasWebhookSecret: !!webhookSecret
+    });
     
     const formData = new FormData();
     let headers = {};
     
     // Add sender email to form data
     formData.append('sender_email', senderEmail);
-    log(`Adding sender email: ${senderEmail}`);
+    logger.debug('Added sender email to form data');
     
     // Combined loop for FormData creation and signature payload building
     if (webhookSecret) {
@@ -148,7 +166,12 @@ async function sendAttachmentsToEndpoint(attachments, senderEmail, receiveEmailU
       let signaturePayload = Buffer.from(senderEmail); // Include sender email in signature
       
       attachments.forEach((attachment, index) => {
-        log(`Adding attachment ${index + 1}: ${attachment.filename} (${attachment.contentType})`);
+        logger.debug('Adding attachment to form data', {
+          index: index + 1,
+          filename: attachment.filename,
+          contentType: attachment.contentType,
+          size: attachment.content.length
+        });
         
         // Add to FormData
         formData.append('attachments[]', attachment.content, {
@@ -164,11 +187,17 @@ async function sendAttachmentsToEndpoint(attachments, senderEmail, receiveEmailU
       const signature = generateSignature(signaturePayload, timestamp, webhookSecret);
       headers['X-Timestamp'] = timestamp.toString();
       headers['X-Signature'] = signature;
-      log('Added authentication headers');
+      logger.debug('Added HMAC authentication headers');
     } else {
+      logger.warn('No webhook secret provided - sending without authentication');
       // No webhook secret, just build FormData
       attachments.forEach((attachment, index) => {
-        log(`Adding attachment ${index + 1}: ${attachment.filename} (${attachment.contentType})`);
+        logger.debug('Adding attachment to form data', {
+          index: index + 1,
+          filename: attachment.filename,
+          contentType: attachment.contentType,
+          size: attachment.content.length
+        });
         formData.append('attachments[]', attachment.content, {
           filename: attachment.filename,
           contentType: attachment.contentType
@@ -185,29 +214,39 @@ async function sendAttachmentsToEndpoint(attachments, senderEmail, receiveEmailU
       timeout: 60000 // 60 second timeout for file uploads
     });
     
-    log(`Response status: ${response.status}`);
+    logger.info('HTTP response received', { status: response.status, ok: response.ok });
     
     if (!response.ok) {
       const errorText = await response.text();
-      log(`Error response: ${errorText}`);
-      throw new Error(`HTTP ${response.status}: ${errorText}`);
+      logger.error('HTTP request failed', { 
+        status: response.status,
+        statusText: response.statusText,
+        responseLength: errorText.length
+      });
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
     
     const result = await response.json();
-    log('Successfully sent attachments:', result);
+    logger.info('Attachments sent successfully', { 
+      resultKeys: Object.keys(result),
+      success: result.success
+    });
     
     return { success: true, result };
   } catch (error) {
-    log(`Error sending attachments: ${error.message}`);
+    logger.logError(error, 'Error sending attachments');
     throw error;
   }
 }
 
 exports.handler = async (event, context) => {
-  log('Lambda function started');
-  log('Event:', JSON.stringify(event, null, 2));
+  logger.info('Lambda function started', { 
+    requestId: context.awsRequestId,
+    functionName: context.functionName,
+    remainingTimeMs: context.getRemainingTimeInMillis()
+  });
+  logger.logEvent(event, 'Processing Lambda event');
 
-  
   try {
     const RECEIVE_EMAIL_URL = process.env.RECEIVE_EMAIL_URL;
     const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
@@ -221,14 +260,14 @@ exports.handler = async (event, context) => {
       const bucketName = s3Event.bucket.name;
       const objectKey = decodeURIComponent(s3Event.object.key.replace(/\+/g, ' '));
       
-      log(`Processing S3 object: ${bucketName}/${objectKey}`);
+      logger.step('Processing S3 email object', { bucket: bucketName, key: objectKey });
       
       const emailBuffer = await readEmailFromS3(bucketName, objectKey);
       
       const { attachments, senderEmail } = await parseEmailAndExtractAttachments(emailBuffer);
       
       if (attachments.length === 0) {
-        log('No supported attachments found in email');
+        logger.info('No supported attachments found in email');
         return {
           statusCode: 200,
           body: JSON.stringify({
@@ -239,6 +278,11 @@ exports.handler = async (event, context) => {
       }
       
       const result = await sendAttachmentsToEndpoint(attachments, senderEmail, RECEIVE_EMAIL_URL, WEBHOOK_SECRET);
+      
+      logger.info('Lambda processing completed successfully', {
+        attachmentsProcessed: attachments.length,
+        resultSuccess: result.success
+      });
       
       return {
         statusCode: 200,
@@ -252,9 +296,14 @@ exports.handler = async (event, context) => {
     
     // Handle direct invocation for testing
     if (event.testEmail) {
+      logger.info('Processing test email from direct invocation');
       const emailBuffer = Buffer.from(event.testEmail, 'base64');
       const { attachments, senderEmail } = await parseEmailAndExtractAttachments(emailBuffer);
       const result = await sendAttachmentsToEndpoint(attachments, senderEmail, RECEIVE_EMAIL_URL, WEBHOOK_SECRET);
+      
+      logger.info('Test email processing completed', {
+        attachmentsProcessed: attachments.length
+      });
       
       return {
         statusCode: 200,
@@ -266,11 +315,14 @@ exports.handler = async (event, context) => {
       };
     }
     
+    logger.error('Invalid event format - no S3 event or testEmail property found');
     throw new Error('Invalid event format. Expected S3 event or testEmail property.');
     
   } catch (error) {
-    log(`Lambda execution error: ${error.message}`);
-    log('Stack trace:', error.stack);
+    logger.logError(error, 'Lambda execution failed', {
+      functionName: context.functionName,
+      requestId: context.awsRequestId
+    });
     
     return {
       statusCode: 500,

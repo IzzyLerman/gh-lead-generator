@@ -18,6 +18,7 @@ import { VehiclePhotoGallery } from './VehiclePhotoGallery'
 import { Tables } from '@/types/database'
 import { Pagination } from '@/components/ui/pagination'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { createLogger } from '@/utils/logger'
 
 interface CompaniesTableProps {
   initialData?: PaginatedResult<CompanyWithContactsAndPhotos>
@@ -31,11 +32,13 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
   const [isExporting, setIsExporting] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const supabase = createClient()
+  const logger = createLogger('companies-table')
 
-  // Debug logging
-  console.log('CompaniesTable component mounted')
-  console.log('Initial data length:', paginatedData.data.length)
-  console.log('Total count:', paginatedData.totalCount)
+  // Component logging
+  logger.component('CompaniesTable', 'mounted', {
+    initialDataLength: paginatedData.data.length,
+    totalCount: paginatedData.totalCount
+  })
 
   const handlePageChange = async (page: number) => {
     setIsLoading(true)
@@ -44,21 +47,24 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
       setPaginatedData(result)
       setExpandedCompanies(new Set()) // Clear expanded state when changing pages
     } catch (error) {
-      console.error('Error fetching page data:', error)
+      logger.logError(error as Error, 'Error fetching page data', { page, pageSize: 8 })
     } finally {
       setIsLoading(false)
     }
   }
 
   useEffect(() => {
-    console.log('Setting up realtime subscription...')
+    logger.debug('Setting up realtime subscription')
     const channel = supabase
       .channel('dashboard-changes')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'companies' },
         (payload) => {
-          console.log('🏢 Company change detected:', payload)
+          logger.debug('Company change detected', { 
+            eventType: payload.eventType,
+            companyId: payload.new?.id || payload.old?.id
+          })
           
           if (payload.eventType === 'INSERT') {
             // For new companies, refresh the current page if we're on page 1
@@ -88,7 +94,10 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'contacts' },
         (payload) => {
-          console.log('Contact change detected:', payload)
+          logger.debug('Contact change detected', {
+            eventType: payload.eventType,
+            contactId: payload.new?.id || payload.old?.id
+          })
           
           if (payload.eventType === 'INSERT') {
             const newContact = payload.new as Tables<'contacts'>
@@ -135,7 +144,11 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'vehicle-photos' },
         (payload) => {
-          console.log('Vehicle photo change detected:', payload)
+          logger.debug('Vehicle photo change detected', {
+            eventType: payload.eventType,
+            photoId: payload.new?.id || payload.old?.id,
+            companyId: payload.new?.company_id || payload.old?.company_id
+          })
           
           if (payload.eventType === 'INSERT') {
             const newPhoto = payload.new as Tables<'vehicle-photos'>
@@ -179,20 +192,20 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
         }
       )
       .subscribe((status) => {
-        console.log('Realtime subscription status:', status)
+        logger.debug('Realtime subscription status changed', { status })
         if (status === 'SUBSCRIBED') {
-          console.log('✅ Successfully subscribed to realtime changes')
+          logger.info('Successfully subscribed to realtime changes')
         } else if (status === 'CHANNEL_ERROR') {
-          console.error('❌ Realtime subscription error')
+          logger.error('Realtime subscription error', { status })
         } else if (status === 'TIMED_OUT') {
-          console.error('⏰ Realtime subscription timed out')
+          logger.error('Realtime subscription timed out', { status })
         } else if (status === 'CLOSED') {
-          console.log('🔒 Realtime subscription closed')
+          logger.info('Realtime subscription closed', { status })
         }
       })
 
     return () => {
-      console.log('Cleaning up realtime subscription')
+      logger.debug('Cleaning up realtime subscription')
       supabase.removeChannel(channel)
     }
   }, [supabase, paginatedData.currentPage])
@@ -239,7 +252,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
       
             
       if (error) {
-        console.error('Supabase error object:', JSON.stringify(error, null, 2))
+        logger.logError(error, 'Supabase error during companies export')
         throw error
       }
       
@@ -250,10 +263,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
       const timestamp = new Date().toISOString().split('T')[0]
       downloadCSV(data, `companies-${timestamp}.csv`)
     } catch (error) {
-      console.error('Error exporting companies:')
-      console.error('Error message:', (error as Error)?.message)
-      console.error('Error stack:', (error as Error)?.stack)
-      console.error('Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error)))
+      logger.logError(error as Error, 'Error exporting companies')
       alert(`Failed to export companies: ${(error as Error)?.message || 'Unknown error'}`)
     } finally {
       setIsExporting(null)
@@ -266,7 +276,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
       const { data, error } = await supabase.schema('private').rpc('export_contacts_csv')
       
       if (error) {
-        console.error('Supabase error object:', JSON.stringify(error, null, 2))
+        logger.logError(error, 'Supabase error during contacts export')
         throw error
       }
       
@@ -277,10 +287,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
       const timestamp = new Date().toISOString().split('T')[0]
       downloadCSV(data, `contacts-${timestamp}.csv`)
     } catch (error) {
-      console.error('Error exporting contacts:')
-      console.error('Error message:', (error as Error)?.message)
-      console.error('Error stack:', (error as Error)?.stack)
-      console.error('Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error)))
+      logger.logError(error as Error, 'Error exporting contacts')
       alert(`Failed to export contacts: ${(error as Error)?.message || 'Unknown error'}`)
     } finally {
       setIsExporting(null)

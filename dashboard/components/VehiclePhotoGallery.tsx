@@ -7,6 +7,7 @@ import { getSignedImageUrl, triggerImageDownload, openImageInNewTab } from '@/li
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Download, ExternalLink, Eye, Loader2 } from 'lucide-react'
+import { createLogger } from '@/utils/logger'
 
 interface VehiclePhotoGalleryProps {
   photos: Tables<'vehicle-photos'>[]
@@ -23,6 +24,7 @@ export function VehiclePhotoGallery({ photos, companyName }: VehiclePhotoGallery
   const [photosWithUrls, setPhotosWithUrls] = useState<PhotoWithUrl[]>([])
   const [selectedPhoto, setSelectedPhoto] = useState<PhotoWithUrl | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
+  const logger = createLogger('vehicle-photo-gallery')
 
   useEffect(() => {
     if (photos.length === 0) return
@@ -50,7 +52,7 @@ export function VehiclePhotoGallery({ photos, companyName }: VehiclePhotoGallery
               error: !signedUrl
             }
           } catch (error) {
-            console.error(`Failed to load photo ${photo.name}:`, error)
+            logger.logError(error as Error, 'Failed to load photo', { photoName: photo.name })
             return { ...photo, loading: false, error: true }
           }
         })
