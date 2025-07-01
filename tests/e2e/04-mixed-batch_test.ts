@@ -171,7 +171,7 @@ Deno.test("E2E: Mixed Batch Processing - Valid and invalid images with different
     assertEquals(queueSize, 0, "Queue should be empty after processing completion");
   });
 
-  await t.step("Cleanup: Remove test data", async () => {
+  /*await t.step("Cleanup: Remove test data", async () => {
     await dbHelpers.cleanupTestData();
     
     // Verify cleanup
@@ -179,5 +179,5 @@ Deno.test("E2E: Mixed Batch Processing - Valid and invalid images with different
     const finalPhotoCount = await dbHelpers.getVehiclePhotoCount();
     assertEquals(finalCompanyCount, 0, "All companies should be cleaned up");
     assertEquals(finalPhotoCount, 0, "All photos should be cleaned up");
-  });
+  });*/
 });

@@ -93,8 +93,8 @@ export class TestFixtures {
   async getInvalidImage(): Promise<File> {
     return await createFileFromPath(
       `${this.basePath}/sampe-exif-heic.heic`,
-      "personal-photo.heic",
-      "image/heic"
+      "invalid-no-extension",
+      "application/octet-stream"
     );
   }
 
