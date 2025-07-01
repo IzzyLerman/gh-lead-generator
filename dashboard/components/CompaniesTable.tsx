@@ -63,7 +63,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
         (payload) => {
           logger.debug('Company change detected', { 
             eventType: payload.eventType,
-            companyId: payload.new?.id || payload.old?.id
+            companyId: (payload.new as Tables<'companies'>)?.id || (payload.old as Tables<'companies'>)?.id
           })
           
           if (payload.eventType === 'INSERT') {
@@ -96,7 +96,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
         (payload) => {
           logger.debug('Contact change detected', {
             eventType: payload.eventType,
-            contactId: payload.new?.id || payload.old?.id
+            contactId: (payload.new as Tables<'contacts'>)?.id || (payload.old as Tables<'contacts'>)?.id
           })
           
           if (payload.eventType === 'INSERT') {
@@ -146,8 +146,8 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
         (payload) => {
           logger.debug('Vehicle photo change detected', {
             eventType: payload.eventType,
-            photoId: payload.new?.id || payload.old?.id,
-            companyId: payload.new?.company_id || payload.old?.company_id
+            photoId: (payload.new as Tables<'vehicle-photos'>)?.id || (payload.old as Tables<'vehicle-photos'>)?.id,
+            companyId: (payload.new as Tables<'vehicle-photos'>)?.company_id || (payload.old as Tables<'vehicle-photos'>)?.company_id
           })
           
           if (payload.eventType === 'INSERT') {
