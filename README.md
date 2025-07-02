@@ -129,7 +129,7 @@ I recommend local development. It's easy to push your changes to remote Supabase
    E2E_REAL_APIS=false
    ```
 
-   **B. Supabase (needed for automatic loading of env variables into Vault)**
+   **B. Supabase (needed for automatic loading of env variables into Vault) (`supabase/.env`):**
    ```env
    WORKER_URL=http://kong:8000/functions/v1 # Use kong:8000 for calling Edge Function from database functions
    SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
