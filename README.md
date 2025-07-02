@@ -8,9 +8,7 @@ An automated pipeline for processing vehicle images to extract company informati
 - **OCR Text Extraction**: Google Cloud Vision API extracts text from images
 - **AI-Powered Parsing**: Anthropic Claude processes extracted text into structured company data
 - **Contact Enrichment**: ZoomInfo API integration for finding company contact information
-- **Data Storage**: PostgreSQL database with automated deduplication
-- **Real-time Dashboard**: Next.js web interface for viewing and managing leads
-- **Message Queue System**: Asynchronous processing with PostgreSQL-based queuing
+- **Real-time Dashboard**: Password-protected Next.js web interface for viewing and managing leads
 - **Export Capabilities**: CSV export functionality for lead data
 
 ## Architecture
@@ -58,8 +56,8 @@ The system is built on **Supabase** and consists of five main components:
   - Google Cloud Vision API (OCR)
   - Anthropic Claude API (text parsing)
   - ZoomInfo API (contact enrichment)
-  - Geoapify API (reverse geocoding GPS EXIF data)
-  - Cloudinary API (screenshotting videos)
+  - Geoapify API (reverse geocoding EXIF GPS data)
+  - Cloudinary API (converting video file types to image)
 - **Frontend**: Next.js with TypeScript, Tailwind CSS
 - **Infrastructure**: AWS Lambda, Supabase, S3
 
@@ -128,8 +126,10 @@ I recommend local development. It's easy to push your changes to remote Supabase
    ```
 
    **B. Supabase (needed for automatic loading of env variables into Vault)**
+   ```
    WORKER_URL=http://kong:8000/functions/v1 # Use kong:8000 for calling Edge Function from database functions
    SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+   ```
 
 
    **C. Lambda Function (`lambda/.env`):**
