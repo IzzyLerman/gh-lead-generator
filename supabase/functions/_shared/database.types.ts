@@ -55,6 +55,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      clear_test_force_company: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
       export_companies_csv: {
         Args: Record<PropertyKey, never>
         Returns: string
@@ -62,6 +66,10 @@ export type Database = {
       export_contacts_csv: {
         Args: Record<PropertyKey, never>
         Returns: string
+      }
+      get_test_force_company: {
+        Args: Record<PropertyKey, never>
+        Returns: number
       }
       normalize_company_name: {
         Args: { name_input: string }
@@ -74,6 +82,10 @@ export type Database = {
       normalize_phone: {
         Args: { phone_input: string }
         Returns: string
+      }
+      set_test_force_company: {
+        Args: { company_index: number }
+        Returns: undefined
       }
       upsert_company: {
         Args: {
@@ -203,6 +215,24 @@ export type Database = {
         }
         Relationships: []
       }
+      test_state: {
+        Row: {
+          created_at: string | null
+          force_company_index: number | null
+          id: number
+        }
+        Insert: {
+          created_at?: string | null
+          force_company_index?: number | null
+          id?: number
+        }
+        Update: {
+          created_at?: string | null
+          force_company_index?: number | null
+          id?: number
+        }
+        Relationships: []
+      }
       "vehicle-photos": {
         Row: {
           company_id: string | null
@@ -243,6 +273,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      zoominfo_auth: {
+        Row: {
+          created_at: string | null
+          expires_at: string
+          id: number
+          jwt_token: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          expires_at: string
+          id?: number
+          jwt_token: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          expires_at?: string
+          id?: number
+          jwt_token?: string
+          updated_at?: string | null
+        }
+        Relationships: []
       }
     }
     Views: {

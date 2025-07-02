@@ -1,3 +1,10 @@
 {
-  "imports": {}
+  "imports": {
+    "zoominfo-api-auth-client": "npm:zoominfo-api-auth-client@^1.0.0"
+  },
+  "compilerOptions": {
+    "checkJs": false,
+    "allowJs": true,
+    "skipLibCheck": true
+  }
 }

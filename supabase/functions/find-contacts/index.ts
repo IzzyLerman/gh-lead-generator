@@ -5,6 +5,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { Database } from './../_shared/database.types.ts';
+import { ZoomInfoAuthManager } from '../_shared/zoominfo-auth.ts';
+import { getCompanyFromZoomInfo } from '../_shared/zoominfo-api.ts';
+import { createLogger } from '../_shared/logger.ts';
 
 const CONSTANTS = {
   BATCH_SIZE: 5,
@@ -12,14 +15,12 @@ const CONSTANTS = {
   QUEUE_NAME: "contact-enrichment"
 } as const;
 
+const logger = createLogger('find-contacts');
+
 function getEnvVar(key: string): string {
   const value = Deno.env.get(key);
   if (!value) throw new Error(`Missing environment variable: ${key}`);
   return value;
-}
-
-function log(message: string, ...args: unknown[]) {
-  console.log(`[find-contacts] ${message}`, ...args);
 }
 
 interface QueueMessage {
@@ -64,19 +65,19 @@ async function deleteMessage(pgmq_public: SupabaseClient<Database, 'pgmq_public'
         message_id: message.msg_id,
     });
     if (error) {
-        log('Error deleting message:', error);
+        logger.error('Error deleting message', { error, messageId: message.msg_id });
         throw error;
     }
 }
 
 async function archiveMessage(pgmq_public: SupabaseClient<Database, 'pgmq_public'>, message: QueueMessage) {
-    log(`Archiving message for company_id: ${message.message.company_id}`);
+    logger.info('Archiving message', { companyId: message.message.company_id, messageId: message.msg_id });
     const { error } = await pgmq_public.rpc('archive', {
         queue_name: CONSTANTS.QUEUE_NAME,
         message_id: message.msg_id,
     });
     if (error) {
-        log('Error archiving message:', error);
+        logger.error('Error archiving message', { error, messageId: message.msg_id });
         throw error;
     }
 }
@@ -89,7 +90,7 @@ async function getCompanyById(supabase: SupabaseClient<Database>, companyId: str
         .single();
 
     if (error) {
-        log(`Error fetching company ${companyId}:`, error);
+        logger.error('Error fetching company', { companyId, error });
         return null;
     }
 
@@ -103,27 +104,36 @@ async function updateCompanyStatus(supabase: SupabaseClient<Database>, companyId
         .eq('id', companyId);
 
     if (error) {
-        log(`Error updating company ${companyId} status to ${status}:`, error);
+        logger.error('Error updating company status', { companyId, status, error });
         throw error;
     }
 }
 
-async function enrichCompanyContacts(company: Company): Promise<void> {
-    // TODO: Implement actual contact enrichment logic
-    // This is a placeholder for the actual contact enrichment service
-    // For now, we'll simulate the process
+async function enrichCompanyContacts(company: Company, authManager: ZoomInfoAuthManager, getCompanyFromZoomInfoFn = getCompanyFromZoomInfo): Promise<void> {
+    logger.info('Enriching contacts for company', { companyId: company.id, companyName: company.name });
     
-    log(`Enriching contacts for company: ${company.name}`);
-    
-    // Simulate contact enrichment process
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // For demonstration, we'll randomly fail some companies to test error handling
-    if (Math.random() > 0.8) {
-        throw new Error(`No additional contacts found for ${company.name}`);
+    try {
+        // Get valid JWT token
+        const token = await authManager.getValidToken();
+        
+        // Search for company in ZoomInfo using available data
+        const searchParams = {
+            companyName: company.name,
+            state: company.state || undefined,
+            city: company.city || undefined
+        };
+        
+        const zoomInfoResponse = await getCompanyFromZoomInfoFn(searchParams, token);
+        
+        logger.info('Successfully enriched contacts using ZoomInfo', { 
+            companyId: company.id, 
+            companyName: company.name,
+            zoomInfoResults: zoomInfoResponse.totalResults
+        });
+    } catch (error) {
+        logger.error('Error enriching contacts', { companyId: company.id, companyName: company.name, error });
+        throw new Error(`Failed to enrich contacts for ${company.name}: ${error instanceof Error ? error.message : String(error)}`);
     }
-    
-    log(`Successfully enriched contacts for company: ${company.name}`);
 }
 
 function createSupabaseClients(url: string, key: string) {
@@ -143,7 +153,7 @@ function createSupabaseClients(url: string, key: string) {
   };
 }
 
-async function processCompanies(messages: QueueMessage[], supabase: SupabaseClient<Database>, pgmq_public: SupabaseClient<Database, 'pgmq_public'>) {
+async function processCompanies(messages: QueueMessage[], supabase: SupabaseClient<Database>, pgmq_public: SupabaseClient<Database, 'pgmq_public'>, authManager: ZoomInfoAuthManager, getCompanyFromZoomInfoFn = getCompanyFromZoomInfo) {
     // Process each company independently using Promise.allSettled
     const results = await Promise.allSettled(
         messages.map(async (message) => {
@@ -157,7 +167,7 @@ async function processCompanies(messages: QueueMessage[], supabase: SupabaseClie
                 }
 
                 // Perform contact enrichment
-                await enrichCompanyContacts(company);
+                await enrichCompanyContacts(company, authManager, getCompanyFromZoomInfoFn);
 
                 // Update status to pending on success
                 await updateCompanyStatus(supabase, companyId, 'pending');
@@ -165,11 +175,11 @@ async function processCompanies(messages: QueueMessage[], supabase: SupabaseClie
                 // Delete message from queue
                 await deleteMessage(pgmq_public, message);
                 
-                log(`Successfully processed company: ${company.name}`);
+                logger.info('Successfully processed company', { companyId, companyName: company.name });
                 return { success: true, companyId, companyName: company.name };
                 
             } catch (error) {
-                log(`Error processing company ${companyId}:`, error);
+                logger.error('Error processing company', { companyId, error });
                 
                 try {
                     // Update status to contacts_failed on error
@@ -179,7 +189,7 @@ async function processCompanies(messages: QueueMessage[], supabase: SupabaseClie
                     await archiveMessage(pgmq_public, message);
                     
                 } catch (cleanupError) {
-                    log(`Error during cleanup for company ${companyId}:`, cleanupError);
+                    logger.error('Error during cleanup for company', { companyId, cleanupError });
                 }
                 
                 return { success: false, companyId, error: error instanceof Error ? error.message : String(error) };
@@ -195,22 +205,28 @@ async function processCompanies(messages: QueueMessage[], supabase: SupabaseClie
         if (result.status === 'fulfilled') {
             if (result.value.success) {
                 successCount++;
-                log(`✓ Company ${result.value.companyName} processed successfully`);
+                logger.info('Company processed successfully', { companyName: result.value.companyName });
             } else {
                 failureCount++;
-                log(`✗ Company ${result.value.companyId} failed: ${result.value.error}`);
+                logger.error('Company failed', { companyId: result.value.companyId, error: result.value.error });
             }
         } else {
             failureCount++;
-            log(`✗ Unexpected error processing message ${index}:`, result.reason);
+            logger.error('Unexpected error processing message', { messageIndex: index, error: result.reason });
         }
     });
 
-    log(`Batch processing complete: ${successCount} successes, ${failureCount} failures`);
+    logger.info('Batch processing complete', { successCount, failureCount });
 }
 
 export const handler = async (req: Request, overrides?: {
-    dequeueElement?: typeof dequeueElement
+    dequeueElement?: typeof dequeueElement,
+    getCompanyFromZoomInfo?: typeof getCompanyFromZoomInfo,
+    supabaseClients?: {
+        supabase: SupabaseClient<Database>,
+        pgmq_public: SupabaseClient<Database, 'pgmq_public'>
+    },
+    authManager?: ZoomInfoAuthManager
 }) => {
     let envVars;
     try {
@@ -233,7 +249,21 @@ export const handler = async (req: Request, overrides?: {
       envVars.SUPABASE_SERVICE_ROLE_KEY
     );
 
+    const clientConfig = {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    };
+
+    const authManager = new ZoomInfoAuthManager(
+      envVars.SUPABASE_URL,
+      envVars.SUPABASE_SERVICE_ROLE_KEY,
+      clientConfig
+    );
+
     const dequeue = overrides?.dequeueElement ?? dequeueElement;
+    const getCompanyFromZoomInfoFn = overrides?.getCompanyFromZoomInfo ?? getCompanyFromZoomInfo;
 
     try {
       const { data: messages } = await dequeue(pgmq_public, CONSTANTS.BATCH_SIZE);
@@ -247,12 +277,12 @@ export const handler = async (req: Request, overrides?: {
           });
       }
 
-      log(`Processing ${messages.length} companies for contact enrichment`);
+      logger.info('Processing companies for contact enrichment', { messageCount: messages.length });
       
-      await processCompanies(messages, supabase, pgmq_public);
+      await processCompanies(messages, supabase, pgmq_public, authManager, getCompanyFromZoomInfoFn);
 
     } catch (error) {
-      log('Error in find-contacts handler:', error);
+      logger.error('Error in find-contacts handler', { error });
       return new Response(
         JSON.stringify({ error: error instanceof Error ? error.message : String(error) }),
         {

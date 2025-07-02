@@ -1,15 +1,16 @@
 import { assertEquals, assertExists } from "https://deno.land/std@0.177.0/testing/asserts.ts";
 import { handler, dequeueElement } from "../find-contacts/index.ts";
+import { mockGetCompanyFromZoomInfo, createMockZoomInfoAuthManager } from "../_shared/zoominfo-mocks.ts";
 
 const mockSupabaseClient = {
   from: (table: string) => ({
     select: (columns: string) => ({
       eq: (column: string, value: string) => ({
         single: () => {
-          if (table === 'companies' && value === 'test-company-id') {
+          if (table === 'companies' && value === '123e4567-e89b-12d3-a456-426614174000') {
             return Promise.resolve({
               data: {
-                id: 'test-company-id',
+                id: '123e4567-e89b-12d3-a456-426614174000',
                 name: 'Test Company',
                 primary_email: 'test@company.com',
                 email: ['test@company.com'],
@@ -43,7 +44,7 @@ const mockPgmqClient = {
           {
             id: 1,
             msg_id: 123,
-            message: { company_id: 'test-company-id' }
+            message: { company_id: '123e4567-e89b-12d3-a456-426614174000' }
           }
         ],
         error: null
@@ -61,7 +62,7 @@ const mockDequeueElement = async (client: any, n: number) => {
       {
         id: 1,
         msg_id: 123,
-        message: { company_id: 'test-company-id' }
+        message: { company_id: '123e4567-e89b-12d3-a456-426614174000' }
       }
     ],
     error: null
@@ -149,7 +150,7 @@ Deno.test("dequeueElement - successful dequeue", async () => {
   const result = await dequeueElement(mockPgmqClient as any, 5);
   
   assertEquals(result.data.length, 1);
-  assertEquals(result.data[0].message.company_id, 'test-company-id');
+  assertEquals(result.data[0].message.company_id, '123e4567-e89b-12d3-a456-426614174000');
   assertEquals(result.error, null);
 });
 
@@ -168,4 +169,110 @@ Deno.test("dequeueElement - error handling", async () => {
   } catch (error) {
     assertExists(error instanceof Error ? error.message : String(error));
   }
+});
+
+Deno.test("find-contacts handler - successful ZoomInfo processing", async () => {
+  const mockDequeueWithCompany = async (client: any, n: number) => {
+    return {
+      data: [
+        {
+          id: 1,
+          msg_id: 123,
+          message: { company_id: '123e4567-e89b-12d3-a456-426614174000' }
+        }
+      ],
+      error: null
+    };
+  };
+
+  const req = new Request('http://localhost:54321/functions/v1/find-contacts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({})
+  });
+
+  const response = await handler(req, {
+    dequeueElement: mockDequeueWithCompany,
+    getCompanyFromZoomInfo: mockGetCompanyFromZoomInfo
+  });
+
+  assertEquals(response.status, 200);
+  
+  const responseData = await response.json();
+  assertEquals(responseData.message, 'Contact enrichment processing complete');
+});
+
+Deno.test("find-contacts handler - ZoomInfo API error handling", async () => {
+  const mockDequeueWithCompany = async (client: any, n: number) => {
+    return {
+      data: [
+        {
+          id: 1,
+          msg_id: 123,
+          message: { company_id: '123e4567-e89b-12d3-a456-426614174000' }
+        }
+      ],
+      error: null
+    };
+  };
+
+  const mockFailingZoomInfo = async (searchParams: any, token: string) => {
+    throw new Error('ZoomInfo API error');
+  };
+
+  const req = new Request('http://localhost:54321/functions/v1/find-contacts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({})
+  });
+
+  const response = await handler(req, {
+    dequeueElement: mockDequeueWithCompany,
+    getCompanyFromZoomInfo: mockFailingZoomInfo
+  });
+
+  assertEquals(response.status, 200);
+  
+  const responseData = await response.json();
+  assertEquals(responseData.message, 'Contact enrichment processing complete');
+});
+
+Deno.test("find-contacts handler - ZoomInfo empty results", async () => {
+  const mockDequeueWithCompany = async (client: any, n: number) => {
+    return {
+      data: [
+        {
+          id: 1,
+          msg_id: 123,
+          message: { company_id: '123e4567-e89b-12d3-a456-426614174000' }
+        }
+      ],
+      error: null
+    };
+  };
+
+  const mockEmptyZoomInfo = async (searchParams: any, token: string) => {
+    return {
+      maxResults: 0,
+      totalResults: 0,
+      currentPage: 1,
+      data: []
+    };
+  };
+
+  const req = new Request('http://localhost:54321/functions/v1/find-contacts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({})
+  });
+
+  const response = await handler(req, {
+    dequeueElement: mockDequeueWithCompany,
+    getCompanyFromZoomInfo: mockEmptyZoomInfo
+  });
+
+  assertEquals(response.status, 200);
+  
+  const responseData = await response.json();
+  assertEquals(responseData.message, 'Contact enrichment processing complete');
 });

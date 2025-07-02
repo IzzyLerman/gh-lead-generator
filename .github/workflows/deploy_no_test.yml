@@ -1,4 +1,4 @@
-name: Deploy
+name: Deploy Without Test
 
 on:
   workflow_dispatch:

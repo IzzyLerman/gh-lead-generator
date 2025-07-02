@@ -6,6 +6,14 @@
     "dotenv": "^16.5.0",
     "heic-convert": "^2.1.0",
     "mime-types": "^3.0.1",
-    "openai": "^4.52.5"
+    "openai": "^4.52.5",
+    "zoominfo-api-auth-client": "*"
+  },
+  "overrides": {
+    "axios": "^1.8.2",
+    "jsrasign": "^11.1.0"
+  },
+  "scripts": {
+    "preinstall": "npx npm-force-resolutions"
   }
 }
