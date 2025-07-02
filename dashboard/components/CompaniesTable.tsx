@@ -571,7 +571,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                     <div className="max-w-xs">
                       <div className="text-sm">
                         {contact.message ? (
-                          <div className="h-32 w-full overflow-y-auto bg-gray-50 border rounded p-2 text-muted-foreground text-xs leading-relaxed">
+                          <div className="h-32 w-full overflow-y-auto bg-muted/30 dark:bg-muted/20 border rounded p-2 text-muted-foreground text-xs leading-relaxed">
                             {contact.message}
                           </div>
                         ) : (
