@@ -126,7 +126,7 @@ I recommend local development. It's easy to push your changes to remote Supabase
    ```
 
    **B. Supabase (needed for automatic loading of env variables into Vault)**
-   ```
+   ```env
    WORKER_URL=http://kong:8000/functions/v1 # Use kong:8000 for calling Edge Function from database functions
    SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
    ```
@@ -234,14 +234,153 @@ Upon push or merge to main, testing and deployment scripts are run through GitHu
 
 ### Manual Deployment
 
-**Deploy Lambda Function:**
+**Deploy Lambda Function with AWS Infrastructure:**
+
+1. **Create S3 Bucket for Email Storage:**
+```bash
+# Create the S3 bucket (replace with your preferred region)
+aws s3 mb s3://gh-vehicle-emails --region us-east-1
+
+# Enable versioning (optional but recommended)
+aws s3api put-bucket-versioning \
+  --bucket gh-vehicle-emails \
+  --versioning-configuration Status=Enabled
+```
+
+2. **Configure SES for Email Receiving:**
+```bash
+# Verify your domain in SES (replace with your domain)
+aws ses verify-domain-identity --domain yourdomain.com
+
+# Create SES receipt rule to store emails in S3
+aws ses create-receipt-rule \
+  --rule-set-name default-rule-set \
+  --rule '{
+    "Name": "vehicle-email-rule",
+    "Enabled": true,
+    "Recipients": ["vehicles@yourdomain.com"],
+    "Actions": [
+      {
+        "S3Action": {
+          "BucketName": "gh-vehicle-emails",
+          "ObjectKeyPrefix": "emails/",
+          "TopicArn": null
+        }
+      }
+    ]
+  }'
+
+# Set the rule set as active
+aws ses set-active-receipt-rule-set --rule-set-name default-rule-set
+```
+
+3. **Create and Deploy Lambda Function:**
 ```bash
 cd lambda
-# Package and deploy to AWS Lambda (follow AWS deployment process)
+
+# Package the Lambda function
 zip -r lambda-function.zip index.js utils/ node_modules/
-# Upload to AWS Lambda or use AWS CLI/CDK/Terraform
-# Configure environment variables through Lambda UI
+
+# Create IAM role for Lambda (if not exists)
+aws iam create-role \
+  --role-name lambda-email-processor-role \
+  --assume-role-policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Principal": { "Service": "lambda.amazonaws.com" },
+        "Action": "sts:AssumeRole"
+      }
+    ]
+  }'
+
+# Attach necessary policies
+aws iam attach-role-policy \
+  --role-name lambda-email-processor-role \
+  --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+aws iam attach-role-policy \
+  --role-name lambda-email-processor-role \
+  --policy-arn arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+
+# Create Lambda function
+aws lambda create-function \
+  --function-name gh-lead-generator-email-processor \
+  --runtime nodejs18.x \
+  --handler index.handler \
+  --zip-file fileb://lambda-function.zip \
+  --role arn:aws:iam::YOUR_ACCOUNT_ID:role/lambda-email-processor-role \
+  --timeout 60 \
+  --memory-size 512
+
+# Set environment variables
+aws lambda update-function-configuration \
+  --function-name gh-lead-generator-email-processor \
+  --environment Variables='{
+    "RECEIVE_EMAIL_URL": "https://your-project.supabase.co/functions/v1/receive-email",
+    "WEBHOOK_SECRET": "your_webhook_secret",
+    "ENVIRONMENT": "production"
+  }'
 ```
+
+4. **Configure S3 Event Trigger:**
+```bash
+# Add S3 trigger to Lambda function
+aws lambda add-permission \
+  --function-name gh-lead-generator-email-processor \
+  --principal s3.amazonaws.com \
+  --action lambda:InvokeFunction \
+  --statement-id s3-trigger-permission \
+  --source-arn arn:aws:s3:::gh-vehicle-emails
+
+# Configure S3 bucket notification
+aws s3api put-bucket-notification-configuration \
+  --bucket gh-vehicle-emails \
+  --notification-configuration '{
+    "LambdaConfigurations": [
+      {
+        "Id": "email-processing-trigger",
+        "LambdaFunctionArn": "arn:aws:lambda:us-east-1:YOUR_ACCOUNT_ID:function:gh-lead-generator-email-processor",
+        "Events": ["s3:ObjectCreated:*"],
+        "Filter": {
+          "Key": {
+            "FilterRules": [
+              {
+                "Name": "prefix",
+                "Value": "emails/"
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }'
+```
+
+5. **DNS Configuration (MX Record):**
+```bash
+# Add MX record to your domain's DNS settings
+# Example for Route 53:
+aws route53 change-resource-record-sets \
+  --hosted-zone-id YOUR_HOSTED_ZONE_ID \
+  --change-batch '{
+    "Changes": [
+      {
+        "Action": "CREATE",
+        "ResourceRecordSet": {
+          "Name": "yourdomain.com",
+          "Type": "MX",
+          "TTL": 300,
+          "ResourceRecords": [
+            { "Value": "10 inbound-smtp.us-east-1.amazonaws.com" }
+          ]
+        }
+      }
+    ]
+  }'
+```
+
 
 **Deploy Edge Functions:**
 ```bash

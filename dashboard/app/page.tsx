@@ -15,7 +15,7 @@ export default async function Dashboard() {
             <div>
               <h1 className="text-3xl font-bold">GH Lead Generator Dashboard</h1>
               <p className="text-muted-foreground">
-                Let&apos;s get some leads yo
+                Submit Truck Images and Track Lead Progress
               </p>
             </div>
             <ThemeToggle />
