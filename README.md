@@ -11,6 +11,10 @@ An automated pipeline for processing vehicle images to extract company informati
 - **Real-time Dashboard**: Password-protected Next.js web interface for viewing and managing leads
 - **Export Capabilities**: CSV export functionality for lead data
 
+![dashboard_screenshot](https://github.com/user-attachments/assets/863bfed1-121f-42f0-8904-c6d5205e9ebd)
+![image_expanded_screenshot](https://github.com/user-attachments/assets/d7114ead-a524-49dc-831b-0dfdca506425)
+
+
 ## Architecture
 
 The system is built on **Supabase** and consists of five main components:
