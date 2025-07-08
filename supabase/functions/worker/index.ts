@@ -113,6 +113,7 @@ interface CompanyUpsertData {
   industry?: string[];
   city?: string;
   state?: string;
+  website?: string;
 }
 
 interface UpsertResult {
@@ -137,7 +138,8 @@ export const upsertCompany = async (supabase: SupabaseClient<Database>, company:
       p_phone: company.phone || '',
       p_industry: company.industry || [],
       p_city: company.city || '',
-      p_state: company.state || ''
+      p_state: company.state || '',
+      p_website: company.website || ''
     });
 
     if (error) {
@@ -376,7 +378,8 @@ function normalizeCompanyData(parsedData: ParsedCompanyData[]): CompanyUpsertDat
     email: json.email,
     phone: json.phone,
     city: json.city,
-    state: json.state
+    state: json.state,
+    website: json.website
   }) as CompanyUpsertData);
 }
 

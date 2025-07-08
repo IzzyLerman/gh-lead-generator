@@ -8,6 +8,7 @@ export const ParsedCompanyDataSchema = z.object({
   phone: z.string().optional(),
   city: z.string().optional(),
   state: z.string().optional(),
+  website: z.string().optional(),
 });
 
 export type ParsedCompanyData = z.infer<typeof ParsedCompanyDataSchema>;

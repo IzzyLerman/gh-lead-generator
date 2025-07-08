@@ -4,7 +4,7 @@ SELECT plan(16);
 
 -- Test 1: Insert new company with all fields
 SELECT lives_ok(
-    $$ SELECT private.upsert_company('Test Company Inc', 'test@example.com', '555-123-4567', ARRAY['Technology', 'Software'], 'San Francisco', 'CA') $$,
+    $$ SELECT private.upsert_company('Test Company Inc', 'test@example.com', '555-123-4567', ARRAY['Technology', 'Software'], 'San Francisco', 'CA', 'https://testcompany.com') $$,
     'Should insert new company successfully'
 );
 
@@ -17,7 +17,7 @@ SELECT is(
 
 -- Test 3: Verify normalized company name matching
 SELECT lives_ok(
-    $$ SELECT private.upsert_company('TEST COMPANY INC.', 'another@example.com', '555-987-6543', ARRAY['Tech'], 'Oakland', 'CA') $$,
+    $$ SELECT private.upsert_company('TEST COMPANY INC.', 'another@example.com', '555-987-6543', ARRAY['Tech'], 'Oakland', 'CA', 'https://testcompany.com') $$,
     'Should match existing company by normalized name'
 );
 
@@ -35,7 +35,7 @@ SELECT ok(
 
 -- Test 5: Insert company with minimal data
 SELECT lives_ok(
-    $$ SELECT private.upsert_company('Minimal Co', NULL, NULL, NULL, NULL, NULL) $$,
+    $$ SELECT private.upsert_company('Minimal Co', NULL, NULL, NULL, NULL, NULL, NULL) $$,
     'Should insert company with minimal data'
 );
 
@@ -43,7 +43,7 @@ SELECT lives_ok(
 INSERT INTO public.companies (name, email) VALUES ('Different Name', ARRAY['unique@test.com']);
 
 SELECT lives_ok(
-    $$ SELECT private.upsert_company('Another Name', 'unique@test.com', '123-456-7890', ARRAY['Finance'], 'NYC', 'NY') $$,
+    $$ SELECT private.upsert_company('Another Name', 'unique@test.com', '123-456-7890', ARRAY['Finance'], 'NYC', 'NY', 'https://finance.com') $$,
     'Should match existing company by email'
 );
 
@@ -57,7 +57,7 @@ SELECT is(
 INSERT INTO public.companies (name, phone) VALUES ('Phone Company', ARRAY['555-000-1111']);
 
 SELECT lives_ok(
-    $$ SELECT private.upsert_company('Phone Match Test', 'newphone@test.com', '(555) 000-1111', ARRAY['Telecom'], 'Boston', 'MA') $$,
+    $$ SELECT private.upsert_company('Phone Match Test', 'newphone@test.com', '(555) 000-1111', ARRAY['Telecom'], 'Boston', 'MA', 'https://telecom.com') $$,
     'Should match existing company by normalized phone'
 );
 
@@ -69,7 +69,7 @@ SELECT is(
 
 -- Test 8: Test industry array merging
 SELECT lives_ok(
-    $$ SELECT private.upsert_company('Test Company Inc', 'test3@example.com', '555-111-2222', ARRAY['Consulting', 'Technology'], 'LA', 'CA') $$,
+    $$ SELECT private.upsert_company('Test Company Inc', 'test3@example.com', '555-111-2222', ARRAY['Consulting', 'Technology'], 'LA', 'CA', 'https://consulting.com') $$,
     'Should merge industry arrays'
 );
 

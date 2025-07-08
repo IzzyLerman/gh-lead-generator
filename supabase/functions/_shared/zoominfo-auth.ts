@@ -36,15 +36,15 @@ export class ZoomInfoAuthManager {
 
   private async requestNewToken(): Promise<string> {
     const username = Deno.env.get('ZOOMINFO_USERNAME');
-    const password = Deno.env.get('ZOOMINFO_PASSWORD');
+    const client_id = Deno.env.get('ZOOMINFO_CLIENT_ID');
+    const private_key = Deno.env.get('ZOOMINFO_PRIVATE_KEY');
 
-    if (!username || !password) {
+    if (!username || !client_id || !private_key) {
       throw new Error('ZoomInfo credentials not found in environment variables');
     }
 
-    // @ts-ignore - dynamic import for zoominfo-api-auth-client
-    const { getAccessTokenViaBasicAuth } = await import('zoominfo-api-auth-client');
-    const tokenResponse = await getAccessTokenViaBasicAuth(username, password);
+    const { getAccessTokenViaPKI } = await import('zoominfo-api-auth-client');
+    const tokenResponse = await getAccessTokenViaPKI(username, client_id, private_key);
     
     if (!tokenResponse.access_token) {
       throw new Error('Failed to obtain ZoomInfo access token');

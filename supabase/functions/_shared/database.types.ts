@@ -83,6 +83,10 @@ export type Database = {
         Args: { phone_input: string }
         Returns: string
       }
+      normalize_website: {
+        Args: { website_input: string }
+        Returns: string
+      }
       set_test_force_company: {
         Args: { company_index: number }
         Returns: undefined
@@ -95,6 +99,7 @@ export type Database = {
           p_industry: string[]
           p_city: string
           p_state: string
+          p_website: string
         }
         Returns: Json
       }
@@ -121,6 +126,7 @@ export type Database = {
           state: string | null
           status: string | null
           updated_at: string | null
+          website: string | null
         }
         Insert: {
           city?: string | null
@@ -134,6 +140,7 @@ export type Database = {
           state?: string | null
           status?: string | null
           updated_at?: string | null
+          website?: string | null
         }
         Update: {
           city?: string | null
@@ -147,6 +154,7 @@ export type Database = {
           state?: string | null
           status?: string | null
           updated_at?: string | null
+          website?: string | null
         }
         Relationships: []
       }

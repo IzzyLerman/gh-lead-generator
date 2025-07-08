@@ -32,9 +32,7 @@ interface QueueMessage {
 interface Company {
   id: string;
   name: string;
-  primary_email: string | null;
   email: string[] | null;
-  primary_phone: string | null;
   phone: string[] | null;
   city: string | null;
   state: string | null;
@@ -43,6 +41,7 @@ interface Company {
   created_at: string | null;
   updated_at: string | null;
   group: string | null;
+  website: string | null;
 }
 
 export async function dequeueElement(pgmq_public: SupabaseClient<Database, 'pgmq_public'>, n: number) {
@@ -113,7 +112,6 @@ async function enrichCompanyContacts(company: Company, authManager: ZoomInfoAuth
     logger.info('Enriching contacts for company', { companyId: company.id, companyName: company.name });
     
     try {
-        // Get valid JWT token
         const token = await authManager.getValidToken();
         
         // Search for company in ZoomInfo using available data

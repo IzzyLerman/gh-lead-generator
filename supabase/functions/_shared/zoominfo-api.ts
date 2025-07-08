@@ -25,5 +25,18 @@ export async function getCompanyFromZoomInfo(
   searchParams: ZoomInfoCompanySearchParams,
   token: string
 ): Promise<ZoomInfoCompanySearchResponse> {
-  throw new Error('ZoomInfo API integration not yet implemented');
+  const response = await fetch('https://api.zoominfo.com/search/company', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(searchParams),
+  });
+
+  if (!response.ok) {
+    throw new Error(`ZoomInfo API error: ${response.status} ${response.statusText}`);
+  }
+
+  return await response.json();
 }
