@@ -178,6 +178,12 @@ jobs:
           USE_MOCK_VISION: 'true'
           USE_MOCK_LLM: 'true'
           E2E_REAL_APIS: 'true'
+          ENVIRONMENT: 'test'
+          ZOOMINFO_USERNAME: ${{ secrets.ZOOMINFO_USERNAME }}
+          ZOOMINFO_CLIENT_ID: ${{ secrets.ZOOMINFO_CLIENT_ID }}
+          ZOOMINFO_PRIVATE_KEY: ${{ secrets.ZOOMINFO_PRIVATE_KEY }}
+                
+
         run: deno test --allow-all ./tests/e2e/
 
       - name: Upload test artifacts
