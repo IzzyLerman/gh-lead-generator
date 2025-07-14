@@ -83,6 +83,9 @@ jobs:
           echo "RECEIVE_EMAIL_URL=http://127.0.0.1:54321/functions/v1/receive-email" >> ./supabase/functions/.env.local
           echo "WEBHOOK_SECRET=${{ secrets.WEBHOOK_SECRET }}" >> ./supabase/functions/.env.local
           echo "WORKER_URL=${{ secrets.WORKER_URL }}" >> ./supabase/functions/.env.local
+          echo "ZOOMINFO_USERNAME=${{ secrets.ZOOMINFO_USERNAME }}" >> ./supabase/functions/.env.local
+          echo "ZOOMINFO_CLIENT_ID=${{ secrets.ZOOMINFO_CLIENT_ID }}" >> ./supabase/functions/.env.local
+          echo "ZOOMINFO_PRIVATE_KEY=${{ secrets.ZOOMINFO_PRIVATE_KEY }}" >> ./supabase/functions/.env.local
           echo "USE_MOCK_VISION=true" >> ./supabase/functions/.env.local
           echo "USE_MOCK_LLM=true" >> ./supabase/functions/.env.local
           echo "E2E_REAL_APIS=true" >> ./supabase/functions/.env.local
