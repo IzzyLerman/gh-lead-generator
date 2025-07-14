@@ -1,6 +1,6 @@
 import { assertEquals, assertExists } from "https://deno.land/std@0.177.0/testing/asserts.ts";
 import { handler, dequeueElement } from "../find-contacts/index.ts";
-import { mockGetCompanyFromZoomInfo, createMockZoomInfoAuthManager } from "../_shared/zoominfo-mocks.ts";
+import { MockZoomInfoService } from "../_shared/zoominfo-mocks.ts";
 
 const mockSupabaseClient = {
   from: (table: string) => ({
@@ -193,7 +193,7 @@ Deno.test("find-contacts handler - successful ZoomInfo processing", async () => 
 
   const response = await handler(req, {
     dequeueElement: mockDequeueWithCompany,
-    getCompanyFromZoomInfo: mockGetCompanyFromZoomInfo
+    zoomInfoService: new MockZoomInfoService()
   });
 
   assertEquals(response.status, 200);
@@ -226,9 +226,15 @@ Deno.test("find-contacts handler - ZoomInfo API error handling", async () => {
     body: JSON.stringify({})
   });
 
+  const mockFailingService = new MockZoomInfoService();
+  // Override the searchCompanies method to throw an error
+  mockFailingService.searchCompanies = async () => {
+    throw new Error('ZoomInfo API error');
+  };
+  
   const response = await handler(req, {
     dequeueElement: mockDequeueWithCompany,
-    getCompanyFromZoomInfo: mockFailingZoomInfo
+    zoomInfoService: mockFailingService
   });
 
   assertEquals(response.status, 200);
@@ -266,9 +272,18 @@ Deno.test("find-contacts handler - ZoomInfo empty results", async () => {
     body: JSON.stringify({})
   });
 
+  const mockEmptyService = new MockZoomInfoService();
+  // Override the searchCompanies method to return empty results
+  mockEmptyService.searchCompanies = async () => ({
+    maxResults: 0,
+    totalResults: 0,
+    currentPage: 1,
+    data: []
+  });
+  
   const response = await handler(req, {
     dequeueElement: mockDequeueWithCompany,
-    getCompanyFromZoomInfo: mockEmptyZoomInfo
+    zoomInfoService: mockEmptyService
   });
 
   assertEquals(response.status, 200);

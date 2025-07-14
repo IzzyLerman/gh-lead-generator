@@ -43,10 +43,17 @@ export class ZoomInfoAuthManager {
       throw new Error('ZoomInfo credentials not found in environment variables');
     }
 
-    const { getAccessTokenViaPKI } = await import('zoominfo-api-auth-client');
-    const tokenResponse = await getAccessTokenViaPKI(username, client_id, private_key);
+    const authClient = await import('zoominfo-api-auth-client');
     
-    if (!tokenResponse.access_token) {
+    let tokenResponse: string;
+    try {
+      tokenResponse = await authClient.getAccessTokenViaPKI(username, client_id, private_key);
+    } catch (error) {
+      console.error("Error in getAccessTokenViaPKI:", error);
+      throw error;
+    }
+    
+    if (!tokenResponse) {
       throw new Error('Failed to obtain ZoomInfo access token');
     }
 
@@ -57,7 +64,7 @@ export class ZoomInfoAuthManager {
     const { error } = await this.supabase
       .from('zoominfo_auth')
       .insert({
-        jwt_token: tokenResponse.access_token,
+        jwt_token: tokenResponse,
         expires_at: expiresAt.toISOString()
       });
 
@@ -65,6 +72,6 @@ export class ZoomInfoAuthManager {
       throw new Error(`Failed to store ZoomInfo token: ${error.message}`);
     }
 
-    return tokenResponse.access_token;
+    return tokenResponse;
   }
 }

@@ -112,7 +112,7 @@ class Logger {
     return value;
   }
 
-  private formatMessage(level: LogLevel, message: string, context?: LogContext): string {
+  private formatMessage(level: LogLevel, message: string, context?: LogContext): any {
     const timestamp = new Date().toISOString();
     const sanitizedContext = this.config.environment === 'production' 
       ? this.sanitizeData(context)
@@ -127,30 +127,30 @@ class Logger {
       ...(sanitizedContext && Object.keys(sanitizedContext).length > 0 ? { context: sanitizedContext } : {})
     };
 
-    return JSON.stringify(logEntry);
+    return logEntry;
   }
 
   debug(message: string, context?: LogContext): void {
     if (this.shouldLog('DEBUG')) {
-      console.log(this.formatMessage('DEBUG', message, context));
+      console.log(JSON.stringify(this.formatMessage('DEBUG', message, context)));
     }
   }
 
   info(message: string, context?: LogContext): void {
     if (this.shouldLog('INFO')) {
-      console.log(this.formatMessage('INFO', message, context));
+      console.log(JSON.stringify(this.formatMessage('INFO', message, context)));
     }
   }
 
   warn(message: string, context?: LogContext): void {
     if (this.shouldLog('WARN')) {
-      console.warn(this.formatMessage('WARN', message, context));
+      console.warn(JSON.stringify(this.formatMessage('WARN', message, context)));
     }
   }
 
   error(message: string, context?: LogContext): void {
     if (this.shouldLog('ERROR')) {
-      console.error(this.formatMessage('ERROR', message, context));
+      console.error(JSON.stringify(this.formatMessage('ERROR', message, context)));
     }
   }
 

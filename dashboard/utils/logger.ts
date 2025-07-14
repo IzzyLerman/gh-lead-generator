@@ -199,28 +199,28 @@ class DashboardLogger {
   debug(message: string, context?: LogContext): void {
     if (this.shouldLog('DEBUG')) {
       const logData = this.formatMessage('DEBUG', message, context);
-      console.log(`[${logData.timestamp}] [DEBUG] [${this.config.service}] ${message}`, logData.context || '');
+      console.log(JSON.stringify(logData));
     }
   }
 
   info(message: string, context?: LogContext): void {
     if (this.shouldLog('INFO')) {
       const logData = this.formatMessage('INFO', message, context);
-      console.log(`[${logData.timestamp}] [INFO] [${this.config.service}] ${message}`, logData.context || '');
+      console.log(JSON.stringify(logData));
     }
   }
 
   warn(message: string, context?: LogContext): void {
     if (this.shouldLog('WARN')) {
       const logData = this.formatMessage('WARN', message, context);
-      console.warn(`[${logData.timestamp}] [WARN] [${this.config.service}] ${message}`, logData.context || '');
+      console.warn(JSON.stringify(logData));
     }
   }
 
   error(message: string, context?: LogContext): void {
     if (this.shouldLog('ERROR')) {
       const logData = this.formatMessage('ERROR', message, context);
-      console.error(`[${logData.timestamp}] [ERROR] [${this.config.service}] ${message}`, logData.context || '');
+      console.error(JSON.stringify(logData));
     }
   }
 

@@ -127,6 +127,7 @@ export type Database = {
           status: string | null
           updated_at: string | null
           website: string | null
+          zoominfo_id: number | null
         }
         Insert: {
           city?: string | null
@@ -141,6 +142,7 @@ export type Database = {
           status?: string | null
           updated_at?: string | null
           website?: string | null
+          zoominfo_id?: number | null
         }
         Update: {
           city?: string | null
@@ -155,6 +157,7 @@ export type Database = {
           status?: string | null
           updated_at?: string | null
           website?: string | null
+          zoominfo_id?: number | null
         }
         Relationships: []
       }
@@ -170,6 +173,7 @@ export type Database = {
           status: string | null
           title: string | null
           updated_at: string | null
+          zoominfo_id: number | null
         }
         Insert: {
           company_id: string
@@ -182,6 +186,7 @@ export type Database = {
           status?: string | null
           title?: string | null
           updated_at?: string | null
+          zoominfo_id?: number | null
         }
         Update: {
           company_id?: string
@@ -194,6 +199,7 @@ export type Database = {
           status?: string | null
           title?: string | null
           updated_at?: string | null
+          zoominfo_id?: number | null
         }
         Relationships: [
           {

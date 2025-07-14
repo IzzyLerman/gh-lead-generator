@@ -1,0 +1,36 @@
+#!/bin/bash
+
+# Get the latest log file
+LATEST_LOG=$(ls -t .logs/functions_*.log | head -1)
+
+if [ -z "$LATEST_LOG" ]; then
+    echo "No log files found in .logs directory"
+    exit 1
+fi
+
+echo "Reading from: $LATEST_LOG"
+
+# Check if first argument is a number (line count) or jq expression
+if [[ "$1" =~ ^[0-9]+$ ]]; then
+    # First arg is a number - use as line count
+    LINE_COUNT="$1"
+    shift  # Remove first argument
+    JQ_ARGS="$*"
+else
+    # First arg is not a number - treat as jq expression
+    LINE_COUNT="20"
+    JQ_ARGS="$*"
+fi
+
+# Default jq expression if none provided
+if [ -z "$JQ_ARGS" ]; then
+    JQ_ARGS=".[]"
+fi
+
+# Extract lines that contain JSON (lines with [Info], [Debug], [Warn], [Error])
+# Skip the startup lines and only process actual log entries
+grep -E '\[(Info|Debug|Warn|Error)\]' "$LATEST_LOG" | \
+sed -E 's/^[0-9T:.-]+Z \[(Info|Debug|Warn|Error)\] //' | \
+tail -n "$LINE_COUNT" | \
+jq "$JQ_ARGS"
+

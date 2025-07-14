@@ -502,13 +502,26 @@ export const handler = async (req: Request, overrides?: {
 
     const dequeue = overrides?.dequeueElement ?? dequeueElement;
     
-    // Use mock Vision API if environment variable is set, otherwise use real API
-    const useMockVision = Deno.env.get("USE_MOCK_VISION") === "true";
-    const vision = overrides?.callVisionAPI ?? (useMockVision ? mockVisionAPI : callVisionAPI);
+    // Use mock APIs in test environment, with override support for specific test scenarios
+    const isTestEnvironment = Deno.env.get("ENVIRONMENT") === "test";
     
-    // Use mock LLM API if environment variable is set, otherwise use real API
-    const useMockLLM = Deno.env.get("USE_MOCK_LLM") === "true";
-    const llm = overrides?.callLLMAPI ?? (useMockLLM ? mockLLMAPI : callLLMAPI);
+    let vision;
+    if (overrides?.callVisionAPI) {
+      vision = overrides.callVisionAPI;
+    } else if (isTestEnvironment) {
+      vision = mockVisionAPI;
+    } else {
+      vision = callVisionAPI;
+    }
+    
+    let llm;
+    if (overrides?.callLLMAPI) {
+      llm = overrides.callLLMAPI;
+    } else if (isTestEnvironment) {
+      llm = mockLLMAPI;
+    } else {
+      llm = callLLMAPI;
+    }
     const url = overrides?.generateSignedUrls ?? generateSignedUrls;
 
     try {

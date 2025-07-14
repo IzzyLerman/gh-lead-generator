@@ -187,3 +187,6 @@ backup_db.sh
 .vercel
 SECURITY_AUDIT_REPORT.md
 redirectEmailsFromBucket.zip
+examples/
+enqueue_company_for_processing.sh
+.old/
