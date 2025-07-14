@@ -208,7 +208,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
       logger.debug('Cleaning up realtime subscription')
       supabase.removeChannel(channel)
     }
-  }, [supabase, paginatedData.currentPage])
+  }, [supabase, paginatedData.currentPage, handlePageChange, logger])
 
   const toggleExpand = (companyId: string) => {
     setExpandedCompanies(prev => {

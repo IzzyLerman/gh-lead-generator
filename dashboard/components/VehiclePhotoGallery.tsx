@@ -62,7 +62,7 @@ export function VehiclePhotoGallery({ photos, companyName }: VehiclePhotoGallery
     }
 
     loadPhotos()
-  }, [photos])
+  }, [photos, logger])
 
   const handlePhotoClick = (photo: PhotoWithUrl) => {
     setSelectedPhoto(photo)
