@@ -86,10 +86,7 @@ jobs:
           echo "ZOOMINFO_USERNAME=${{ secrets.ZOOMINFO_USERNAME }}" >> ./supabase/functions/.env.local
           echo "ZOOMINFO_CLIENT_ID=${{ secrets.ZOOMINFO_CLIENT_ID }}" >> ./supabase/functions/.env.local
           echo "ZOOMINFO_PRIVATE_KEY=${{ secrets.ZOOMINFO_PRIVATE_KEY }}" >> ./supabase/functions/.env.local
-          echo "USE_MOCK_VISION=true" >> ./supabase/functions/.env.local
-          echo "USE_MOCK_LLM=true" >> ./supabase/functions/.env.local
-          echo "E2E_REAL_APIS=true" >> ./supabase/functions/.env.local
-
+          echo "ENVIRONMENT='test'" >> ./supabase/functions/.env.local
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
         with:
@@ -123,6 +120,7 @@ jobs:
           RECEIVE_EMAIL_URL: ${{ secrets.RECEIVE_EMAIL_URL }}
           WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
           WORKER_URL: ${{ secrets.WORKER_URL }}
+          ENVIRONMENT: 'test'
         run: deno test --allow-all ./supabase
 
       - name: Deploy functions locally
