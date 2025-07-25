@@ -557,22 +557,18 @@ function createSupabaseClients(url: string, key: string) {
 }
 
 async function processCompanies(messages: QueueMessage[], supabase: SupabaseClient<Database>, pgmq_public: SupabaseClient<Database, 'pgmq_public'>, zoomInfoService: IZoomInfoService) {
-    // Process each company independently using Promise.allSettled
     const results = await Promise.allSettled(
         messages.map(async (message) => {
             const companyId = message.message.company_id;
             
             try {
-                // Get company data
                 const company = await getCompanyById(supabase, companyId);
                 if (!company) {
                     throw new Error(`Company ${companyId} not found`);
                 }
 
-                // Perform contact enrichment (status is set within this function)
                 await enrichCompanyContacts(company, zoomInfoService, supabase, pgmq_public);
                 
-                // Delete message from queue
                 await deleteMessage(pgmq_public, message);
                 
                 logger.info('Successfully processed company', { companyId, companyName: company.name });
@@ -582,10 +578,8 @@ async function processCompanies(messages: QueueMessage[], supabase: SupabaseClie
                 logger.error('Error processing company', { companyId, error });
                 
                 try {
-                    // Update status to contacts_failed on error
                     await updateCompanyStatus(supabase, companyId, 'contacts_failed', null);
                     
-                    // Archive message
                     await archiveMessage(pgmq_public, message);
                     
                 } catch (cleanupError) {
@@ -597,7 +591,6 @@ async function processCompanies(messages: QueueMessage[], supabase: SupabaseClie
         })
     );
 
-    // Log results
     let successCount = 0;
     let failureCount = 0;
     
