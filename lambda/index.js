@@ -5,8 +5,7 @@ const fetch = require('node-fetch');
 const crypto = require('crypto');
 const { fromBuffer: fileTypeFromBuffer } = require('file-type');
 // Conditional import for local vs production environment
-const isProduction = process.env.ENVIRONMENT === 'production';
-const loggerPath = isProduction ? '~/utils/logger.js' : './utils/logger';
+const loggerPath =  './utils/logger';
 const { createLogger } = require(loggerPath);
 
 // Defer S3 client creation to allow for mocking in tests
