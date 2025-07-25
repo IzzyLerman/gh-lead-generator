@@ -53,6 +53,7 @@ interface Company {
   group: string | null;
   website: string | null;
   zoominfo_id: number | null;
+  revenue: number | null;
 }
 
 export async function dequeueElement(pgmq_public: SupabaseClient<Database, 'pgmq_public'>, n: number) {
@@ -263,25 +264,34 @@ async function uploadContactsToEmailQueue(enrichedContacts: ZoomInfoEnrichedCont
     }
 }
 
-async function storeEnrichedContacts(enrichedContacts: any[], companyId: string, supabase: SupabaseClient<Database>): Promise<string[]> {
+async function storeEnrichedContacts(enrichedContacts: any[], companyId: string, supabase: SupabaseClient<Database>, companyRevenue: number | null): Promise<{contactIds: string[], validContactsForQueue: any[]}> {
     logger.info('Storing enriched contacts', { 
         companyId, 
         contactCount: enrichedContacts.length 
     });
     
-    const companyRevenue = enrichedContacts[0].company.revenueNumeric;
-    
     try {
-        const contactsToInsert = enrichedContacts.map(contact => ({
-            company_id: companyId,
-            name: `${contact.firstName || ''} ${contact.lastName || ''}`.trim(),
-            title: contact.jobTitle || null,
-            email: contact.email || null,
-            phone: contact.phone || null,
-            zoominfo_id: contact.id,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-        }));
+        const contactsToInsert = enrichedContacts.map(contact => {
+            let status = 'generating_message';
+            
+            if (companyRevenue !== null && companyRevenue < CONSTANTS.REVENUE_MIN_FILTER) {
+                status = 'low_revenue';
+            } else if (!contact.email && !contact.phone) {
+                status = 'no_contact';
+            }
+            
+            return {
+                company_id: companyId,
+                name: `${contact.firstName || ''} ${contact.lastName || ''}`.trim(),
+                title: contact.jobTitle || null,
+                email: contact.email || null,
+                phone: contact.phone || null,
+                zoominfo_id: contact.id,
+                status: status,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            };
+        });
 
 
         const data = await Promise.all(contactsToInsert.map(async (contact) => {
@@ -317,14 +327,18 @@ async function storeEnrichedContacts(enrichedContacts: any[], companyId: string,
         
 
         const contactIds = enrichedContacts.map(contact => contact.id);
+        const validContactsForQueue = contactsToInsert.filter(contact => 
+            contact.status === 'generating_message'
+        );
         
         logger.info('Successfully stored enriched contacts', { 
             companyId, 
             contactCount: enrichedContacts.length,
-            contactIds
+            contactIds,
+            validForQueue: validContactsForQueue.length
         });
         
-        return contactIds;
+        return { contactIds, validContactsForQueue };
     } catch (error) {
         logger.error('Error in storeEnrichedContacts', { 
             companyId, 
@@ -505,25 +519,31 @@ async function enrichCompanyContacts(company: Company, zoomInfoService: IZoomInf
             }))
         });
         
-        // Step 4: Store ALL enriched contacts in the database
+        // Step 4: Store ALL enriched contacts in the database with proper status
         if (enrichedContacts.length > 0) {
-            const contactIds = await storeEnrichedContacts(enrichedContacts, company.id, supabase);
+            const { contactIds, validContactsForQueue } = await storeEnrichedContacts(
+                enrichedContacts, 
+                company.id, 
+                supabase,
+                company.revenue
+            );
             
-            // Step 5: Only upload high-revenue contacts to email-generation queue
-            if (highRevenueContacts.length > 0) {
-                // Map high-revenue contacts to their corresponding contact IDs
-                await uploadContactsToEmailQueue(enrichedContacts, pgmq_public);
+            // Step 5: Only upload contacts with valid email/phone and sufficient revenue to queue
+            if (validContactsForQueue.length > 0) {
+                const contactsToQueue = enrichedContacts.filter(contact => 
+                    validContactsForQueue.some(valid => valid.zoominfo_id === contact.id)
+                );
+                await uploadContactsToEmailQueue(contactsToQueue, pgmq_public);
             }
         }
         
-        // Step 6: Set company status based on revenue filtering results
-        let finalStatus = 'generating_message';
-        let companyRevenue = enrichedContacts[0].company?.revenueNumeric ?? null
+        // Step 6: Set company status - always 'processed' or 'low_revenue' after ZoomInfo processing
+        let finalStatus = 'processed';
         if (enrichedContacts.length > 0 && highRevenueContacts.length === 0) {
             finalStatus = 'low_revenue';
         }
         
-        await updateCompanyStatus(supabase, company.id, finalStatus, companyRevenue, zoomInfoCompanyId);
+        await updateCompanyStatus(supabase, company.id, finalStatus, company.revenue, zoomInfoCompanyId);
         
         logger.info('Successfully enriched contacts for company', {
             companyId: company.id,

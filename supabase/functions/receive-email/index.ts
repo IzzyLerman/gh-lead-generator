@@ -676,12 +676,21 @@ async function uploadFileAndCreateRecord(
 }
 
 export async function enqueueImageJob(pgmq_public: SupabaseClient<Database, 'pgmq_public'>, imagePath: string): Promise<number[]> {
-  const { data } = await pgmq_public.rpc("send", {
+  const { data, error } = await pgmq_public.rpc("send", {
     queue_name: "image-processing",
     message: { image_path: imagePath },
   });
+  if (error) {
+    logger.logError(error instanceof Error ? error : new Error(JSON.stringify(error)), 'Failed to enqueue image job', {
+      imagePath,
+      queueName: 'image-processing'
+    });
+    throw new Error(`Failed to upload to the queue: ${error.message || JSON.stringify(error)}`);
+  }
   if (!data){
-	  throw new Error("Failed to upload to the queue");
+    const errorMsg = "Queue operation returned no data";
+    logger.error(errorMsg, { imagePath });
+    throw new Error(errorMsg);
   }
   return data;
 }
@@ -716,6 +725,7 @@ async function processAttachments(
   const errors: string[] = [];
   
   for (const file of attachments) {
+    let uploadData: any = null;
     try {
       validateFile(file);
       
@@ -747,13 +757,16 @@ async function processAttachments(
       const filename = generateUniqueFilename(processedFile.name);
       
       // Upload file with separated GPS and location data
-      const uploadData = await uploadFileAndCreateRecord(supabase, processedFile, filename, senderEmail, undefined, coordinatesString, streetAddress);
+      uploadData = await uploadFileAndCreateRecord(supabase, processedFile, filename, senderEmail, undefined, coordinatesString, streetAddress);
       uploadedPaths.push(uploadData.path);
       
       await enqueue(pgmq_public, uploadData.path);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
-      logger.error('Failed to process file', { filename: file.name, errorMessage });
+      logger.logError(error instanceof Error ? error : new Error(String(error)), 'Failed to process file', { 
+        filename: file.name,
+        uploadPath: uploadData?.path
+      });
       errors.push(`${file.name}: ${errorMessage}`);
     }
   }

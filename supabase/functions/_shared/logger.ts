@@ -114,9 +114,7 @@ class Logger {
 
   private formatMessage(level: LogLevel, message: string, context?: LogContext): any {
     const timestamp = new Date().toISOString();
-    const sanitizedContext = this.config.environment === 'production' 
-      ? this.sanitizeData(context)
-      : context;
+    const sanitizedContext = context;
 
     const logEntry = {
       timestamp,
@@ -161,7 +159,7 @@ class Logger {
       error: {
         name: error.name,
         message: error.message,
-        ...(this.config.environment === 'development' ? { stack: error.stack } : {})
+        stack: error.stack
       }
     };
 

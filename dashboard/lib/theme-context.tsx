@@ -1,6 +1,7 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState } from 'react'
+import { usePathname } from 'next/navigation'
 
 type Theme = 'light' | 'dark'
 
@@ -14,13 +15,18 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>('light')
+  const pathname = usePathname()
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme') as Theme
     const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
     
-    setTheme(savedTheme || systemTheme)
-  }, [])
+    if (pathname === '/login') {
+      setTheme('light')
+    } else {
+      setTheme(savedTheme || systemTheme)
+    }
+  }, [pathname])
 
   useEffect(() => {
     const root = document.documentElement

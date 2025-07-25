@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import Image from 'next/image'
 import { Tables } from '@/types/database'
 import { getSignedImageUrl, triggerImageDownload, openImageInNewTab } from '@/lib/image-utils'
@@ -25,6 +25,11 @@ export function VehiclePhotoGallery({ photos, companyName }: VehiclePhotoGallery
   const [selectedPhoto, setSelectedPhoto] = useState<PhotoWithUrl | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const logger = createLogger('vehicle-photo-gallery')
+
+  const photoIds = useMemo(() => 
+    photos.map(photo => `${photo.id}-${photo.name}`).join(','), 
+    [photos]
+  )
 
   useEffect(() => {
     if (photos.length === 0) return
@@ -62,7 +67,7 @@ export function VehiclePhotoGallery({ photos, companyName }: VehiclePhotoGallery
     }
 
     loadPhotos()
-  }, [photos])
+  }, [photoIds])
 
   const handlePhotoClick = (photo: PhotoWithUrl) => {
     setSelectedPhoto(photo)
