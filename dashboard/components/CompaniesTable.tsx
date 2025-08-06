@@ -51,7 +51,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
     } finally {
       setIsLoading(false)
     }
-  }, [logger])
+  }, [])
 
   useEffect(() => {
     logger.debug('Setting up realtime subscription')
@@ -68,9 +68,12 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
           
           if (payload.eventType === 'INSERT') {
             // For new companies, refresh the current page if we're on page 1
-            if (paginatedData.currentPage === 1) {
-              handlePageChange(1)
-            }
+            setPaginatedData(prev => {
+              if (prev.currentPage === 1) {
+                handlePageChange(1)
+              }
+              return prev
+            })
           } else if (payload.eventType === 'UPDATE') {
             const updatedCompany = payload.new as Tables<'companies'>
             setPaginatedData(prev => ({
@@ -208,7 +211,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
       logger.debug('Cleaning up realtime subscription')
       supabase.removeChannel(channel)
     }
-  }, [supabase, paginatedData.currentPage, handlePageChange, logger])
+  }, [])
 
   const toggleExpand = (companyId: string) => {
     setExpandedCompanies(prev => {
