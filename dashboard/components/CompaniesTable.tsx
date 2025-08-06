@@ -235,6 +235,11 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
     return new Date(dateString).toLocaleDateString()
   }
 
+  const formatFullName = (firstName: string | null, middleName: string | null, lastName: string | null) => {
+    const nameParts = [firstName, middleName, lastName].filter(part => part && part.trim())
+    return nameParts.length > 0 ? nameParts.join(' ') : 'Unnamed Contact'
+  }
+
   const downloadCSV = (csvContent: string, filename: string) => {
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
@@ -544,69 +549,106 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
               </TableRow>
               
               {/* Expanded contact rows */}
-              {expandedCompanies.has(company.id) && company.contacts.map((contact) => (
-                <TableRow key={contact.id} className="bg-muted/30">
-                  <TableCell></TableCell>
-                  <TableCell className="pl-8">
-                    <div className="text-sm text-muted-foreground">
-                      {contact.name || 'Unnamed Contact'}
-                      {contact.title && <span className="ml-2">({contact.title})</span>}
-                    </div>
-                  </TableCell>
-                  <TableCell></TableCell>
-                  <TableCell></TableCell>
-                  <TableCell>
-                    <div className="space-y-1 text-sm">
-                      {contact.email && (
-                        <div className="flex items-center gap-1">
-                          <Mail className="h-3 w-3" />
-                          {contact.email}
+              {expandedCompanies.has(company.id) && (
+                <>
+                  {/* Contact header row */}
+                  <TableRow className="bg-muted/50 border-t">
+                    <TableCell></TableCell>
+                    <TableCell className="font-medium text-xs text-muted-foreground">Full Name</TableCell>
+                    <TableCell className="font-medium text-xs text-muted-foreground">First Name</TableCell>
+                    <TableCell className="font-medium text-xs text-muted-foreground">Middle Name</TableCell>
+                    <TableCell className="font-medium text-xs text-muted-foreground">Last Name</TableCell>
+                    <TableCell className="font-medium text-xs text-muted-foreground">Contact Info</TableCell>
+                    <TableCell className="font-medium text-xs text-muted-foreground">Status</TableCell>
+                    <TableCell className="font-medium text-xs text-muted-foreground">Message</TableCell>
+                    <TableCell className="font-medium text-xs text-muted-foreground">Created</TableCell>
+                    <TableCell></TableCell>
+                  </TableRow>
+                  {company.contacts.map((contact) => (
+                    <TableRow key={contact.id} className="bg-muted/30">
+                      <TableCell></TableCell>
+                      <TableCell className="pl-8">
+                        <div className="text-sm text-muted-foreground">
+                          {formatFullName(contact.first_name, contact.middle_name, contact.last_name)}
+                          {contact.title && <span className="ml-2">({contact.title})</span>}
                         </div>
-                      )}
-                      {contact.phone && (
-                        <div className="flex items-center gap-1">
-                          <Phone className="h-3 w-3" />
-                          {contact.phone}
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm text-muted-foreground">
+                          {contact.first_name || '-'}
                         </div>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell></TableCell>
-                  <TableCell>
-                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                      contact.status === 'generating_message' 
-                        ? 'bg-blue-100 text-blue-800' 
-                        : contact.status === 'low_revenue'
-                        ? 'bg-orange-100 text-orange-800'
-                        : contact.status === 'no_contact'
-                        ? 'bg-gray-100 text-gray-800'
-                        : 'bg-blue-100 text-blue-800'
-                    }`}>
-                      {contact.status === 'generating_message' ? 'Generating Message' 
-                        : contact.status === 'low_revenue' ? 'Low Revenue'
-                        : contact.status === 'no_contact' ? 'No Contact'
-                        : 'Generating Message'}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <div className="max-w-xs">
-                      <div className="text-sm">
-                        {contact.message ? (
-                          <div className="h-32 w-full overflow-y-auto bg-muted/30 dark:bg-muted/20 border rounded p-2 text-muted-foreground text-xs leading-relaxed">
-                            {contact.message}
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm text-muted-foreground">
+                          {contact.middle_name || '-'}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm text-muted-foreground">
+                          {contact.last_name || '-'}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="space-y-1 text-sm">
+                          {contact.email && (
+                            <div className="flex items-center gap-1">
+                              <Mail className="h-3 w-3" />
+                              {contact.email}
+                            </div>
+                          )}
+                          {contact.phone && (
+                            <div className="flex items-center gap-1">
+                              <Phone className="h-3 w-3" />
+                              {contact.phone}
+                            </div>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                          contact.status === 'generating_message' 
+                            ? 'bg-blue-100 text-blue-800' 
+                            : contact.status === 'low_revenue'
+                            ? 'bg-orange-100 text-orange-800'
+                            : contact.status === 'no_contact'
+                            ? 'bg-gray-100 text-gray-800'
+                            : 'bg-blue-100 text-blue-800'
+                        }`}>
+                          {contact.status === 'generating_message' ? 'Generating Message' 
+                            : contact.status === 'low_revenue' ? 'Low Revenue'
+                            : contact.status === 'no_contact' ? 'No Contact'
+                            : 'Generating Message'}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <div className="max-w-xs">
+                          <div className="text-sm">
+                            {(contact.email_body || contact.email_subject || contact.text_message) ? (
+                              <div className="h-32 w-full overflow-y-auto bg-muted/30 dark:bg-muted/20 border rounded p-2 text-muted-foreground text-xs leading-relaxed">
+                                {contact.email_subject && (
+                                  <div className="font-medium mb-1">Email Subject: {contact.email_subject}</div>
+                                )}
+                                {contact.email_body && (
+                                  <div className="mb-2">Email: {contact.email_body}</div>
+                                )}
+                                {contact.text_message && (
+                                  <div>Text: {contact.text_message}</div>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="text-muted-foreground">-</div>
+                            )}
                           </div>
-                        ) : (
-                          <div className="text-muted-foreground">-</div>
-                        )}
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell></TableCell>
-                  <TableCell className="text-muted-foreground text-sm">
-                    {formatDate(contact.created_at)}
-                  </TableCell>
-                </TableRow>
-              ))}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {formatDate(contact.created_at)}
+                      </TableCell>
+                      <TableCell></TableCell>
+                    </TableRow>
+                  ))}
+                </>
+              )}
             </React.Fragment>
           ))
           )}
