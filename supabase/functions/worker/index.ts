@@ -407,7 +407,7 @@ async function processMessages(companies: CompanyUpsertData[], messages: QueueMe
       // Extract company_id and insert flag from the new return format
       const upsertResult = result.data as unknown as UpsertResult;
       const companyId = upsertResult.company_id;
-      const wasInsert = upsertResult.was_insert;
+      let wasInsert = upsertResult.was_insert;
       
       // Update vehicle_photos table with company_id and mark as processed
       const pathname = message.message.image_path;
@@ -433,6 +433,8 @@ async function processMessages(companies: CompanyUpsertData[], messages: QueueMe
       }
       
       // Only enqueue for contact enrichment if this was a new company (insert)
+      // MODIFIED: always enqueue for now since some existing companies are messed updateError
+      wasInsert = true;
       if (wasInsert) {
         try {
           await enqueueForContactEnrichment(pgmq_public, companyId);

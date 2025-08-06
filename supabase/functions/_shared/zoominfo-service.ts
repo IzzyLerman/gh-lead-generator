@@ -60,6 +60,8 @@ export class ZoomInfoService implements IZoomInfoService {
       { companyName: input.name, state: input.state, companyWebsite: input.website, industryKeywords: input.industries?.join(',') }
     ];
 
+    let lastMultipleResultsResponse: ZoomInfoCompanySearchResponse | null = null;
+
     for (let i = 0; i < searchStrategies.length; i++) {
       const strategy = searchStrategies[i];
       
@@ -73,7 +75,17 @@ export class ZoomInfoService implements IZoomInfoService {
         const result = await this.searchCompanies(filteredStrategy);
         
         if (result.totalResults === 0) {
-          logger.info(`Strategy ${i + 1} returned no results, trying next strategy`);
+          logger.info(`Strategy ${i + 1} returned no results`);
+          
+          if (lastMultipleResultsResponse) {
+            logger.info('Using top result from previous search that had multiple results', {
+              companyId: lastMultipleResultsResponse.data[0].id,
+              companyName: lastMultipleResultsResponse.data[0].name
+            });
+            return lastMultipleResultsResponse;
+          }
+          
+          logger.info('Trying next strategy');
           continue;
         }
         
@@ -93,7 +105,10 @@ export class ZoomInfoService implements IZoomInfoService {
           return result;
         }
         
-        logger.info(`Strategy ${i + 1} returned ${result.totalResults} results, trying more specific search`);
+        if (result.totalResults > 1) {
+          logger.info(`Strategy ${i + 1} returned ${result.totalResults} results, storing as fallback and trying more specific search`);
+          lastMultipleResultsResponse = result;
+        }
         
       } catch (error) {
         logger.error(`Strategy ${i + 1} failed`, { 
@@ -105,6 +120,14 @@ export class ZoomInfoService implements IZoomInfoService {
           throw error;
         }
       }
+    }
+
+    if (lastMultipleResultsResponse) {
+      logger.info('All strategies exhausted, using stored result from previous search with multiple results', {
+        companyId: lastMultipleResultsResponse.data[0].id,
+        companyName: lastMultipleResultsResponse.data[0].name
+      });
+      return lastMultipleResultsResponse;
     }
 
     logger.info('All search strategies exhausted, company not found in ZoomInfo');
