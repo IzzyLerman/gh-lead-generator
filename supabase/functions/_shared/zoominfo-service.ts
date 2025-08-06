@@ -55,9 +55,8 @@ export class ZoomInfoService implements IZoomInfoService {
 
     const searchStrategies = [
       { companyName: input.name },
-      { companyName: input.name, state: input.state },
-      { companyName: input.name, state: input.state, companyWebsite: input.website },
-      { companyName: input.name, state: input.state, companyWebsite: input.website, industryKeywords: input.industries?.join(',') }
+      { companyName: input.name, companyWebsite: input.website },
+      { companyName: input.name, companyWebsite: input.website, industryKeywords: input.industries?.join(',') }
     ];
 
     let lastMultipleResultsResponse: ZoomInfoCompanySearchResponse | null = null;

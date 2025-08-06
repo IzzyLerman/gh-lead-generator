@@ -171,7 +171,10 @@ export type Database = {
           email: string | null
           email_body: string | null
           email_subject: string | null
+          first_name: string | null
           id: string
+          last_name: string | null
+          middle_name: string | null
           name: string | null
           phone: string | null
           status: string | null
@@ -186,7 +189,10 @@ export type Database = {
           email?: string | null
           email_body?: string | null
           email_subject?: string | null
+          first_name?: string | null
           id?: string
+          last_name?: string | null
+          middle_name?: string | null
           name?: string | null
           phone?: string | null
           status?: string | null
@@ -201,7 +207,10 @@ export type Database = {
           email?: string | null
           email_body?: string | null
           email_subject?: string | null
+          first_name?: string | null
           id?: string
+          last_name?: string | null
+          middle_name?: string | null
           name?: string | null
           phone?: string | null
           status?: string | null

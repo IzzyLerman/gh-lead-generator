@@ -55,6 +55,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      clear_test_force_company: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
       export_companies_csv: {
         Args: Record<PropertyKey, never>
         Returns: string
@@ -62,6 +66,10 @@ export type Database = {
       export_contacts_csv: {
         Args: Record<PropertyKey, never>
         Returns: string
+      }
+      get_test_force_company: {
+        Args: Record<PropertyKey, never>
+        Returns: number
       }
       normalize_company_name: {
         Args: { name_input: string }
@@ -75,6 +83,14 @@ export type Database = {
         Args: { phone_input: string }
         Returns: string
       }
+      normalize_website: {
+        Args: { website_input: string }
+        Returns: string
+      }
+      set_test_force_company: {
+        Args: { company_index: number }
+        Returns: undefined
+      }
       upsert_company: {
         Args: {
           p_name: string
@@ -83,8 +99,9 @@ export type Database = {
           p_industry: string[]
           p_city: string
           p_state: string
+          p_website: string
         }
-        Returns: string
+        Returns: Json
       }
     }
     Enums: {
@@ -106,9 +123,12 @@ export type Database = {
           industry: string[] | null
           name: string
           phone: string[] | null
+          revenue: number | null
           state: string | null
           status: string | null
           updated_at: string | null
+          website: string | null
+          zoominfo_id: number | null
         }
         Insert: {
           city?: string | null
@@ -119,9 +139,12 @@ export type Database = {
           industry?: string[] | null
           name: string
           phone?: string[] | null
+          revenue?: number | null
           state?: string | null
           status?: string | null
           updated_at?: string | null
+          website?: string | null
+          zoominfo_id?: number | null
         }
         Update: {
           city?: string | null
@@ -132,9 +155,12 @@ export type Database = {
           industry?: string[] | null
           name?: string
           phone?: string[] | null
+          revenue?: number | null
           state?: string | null
           status?: string | null
           updated_at?: string | null
+          website?: string | null
+          zoominfo_id?: number | null
         }
         Relationships: []
       }
@@ -143,37 +169,55 @@ export type Database = {
           company_id: string
           created_at: string | null
           email: string | null
+          email_body: string | null
+          email_subject: string | null
+          first_name: string | null
           id: string
-          message: string | null
+          last_name: string | null
+          middle_name: string | null
           name: string | null
           phone: string | null
           status: string | null
+          text_message: string | null
           title: string | null
           updated_at: string | null
+          zoominfo_id: number | null
         }
         Insert: {
           company_id: string
           created_at?: string | null
           email?: string | null
+          email_body?: string | null
+          email_subject?: string | null
+          first_name?: string | null
           id?: string
-          message?: string | null
+          last_name?: string | null
+          middle_name?: string | null
           name?: string | null
           phone?: string | null
           status?: string | null
+          text_message?: string | null
           title?: string | null
           updated_at?: string | null
+          zoominfo_id?: number | null
         }
         Update: {
           company_id?: string
           created_at?: string | null
           email?: string | null
+          email_body?: string | null
+          email_subject?: string | null
+          first_name?: string | null
           id?: string
-          message?: string | null
+          last_name?: string | null
+          middle_name?: string | null
           name?: string | null
           phone?: string | null
           status?: string | null
+          text_message?: string | null
           title?: string | null
           updated_at?: string | null
+          zoominfo_id?: number | null
         }
         Relationships: [
           {
@@ -203,10 +247,50 @@ export type Database = {
         }
         Relationships: []
       }
+      queue_config: {
+        Row: {
+          created_at: string | null
+          queue_name: string
+          threshold: number
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          queue_name: string
+          threshold?: number
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          queue_name?: string
+          threshold?: number
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      test_state: {
+        Row: {
+          created_at: string | null
+          force_company_index: number | null
+          id: number
+        }
+        Insert: {
+          created_at?: string | null
+          force_company_index?: number | null
+          id?: number
+        }
+        Update: {
+          created_at?: string | null
+          force_company_index?: number | null
+          id?: number
+        }
+        Relationships: []
+      }
       "vehicle-photos": {
         Row: {
           company_id: string | null
           created_at: string | null
+          gps: string | null
           id: number
           location: string | null
           name: string | null
@@ -216,6 +300,7 @@ export type Database = {
         Insert: {
           company_id?: string | null
           created_at?: string | null
+          gps?: string | null
           id?: number
           location?: string | null
           name?: string | null
@@ -225,6 +310,7 @@ export type Database = {
         Update: {
           company_id?: string | null
           created_at?: string | null
+          gps?: string | null
           id?: number
           location?: string | null
           name?: string | null
@@ -240,6 +326,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      zoominfo_auth: {
+        Row: {
+          created_at: string | null
+          expires_at: string
+          id: number
+          jwt_token: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          expires_at: string
+          id?: number
+          jwt_token: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          expires_at?: string
+          id?: number
+          jwt_token?: string
+          updated_at?: string | null
+        }
+        Relationships: []
       }
     }
     Views: {

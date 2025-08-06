@@ -22,7 +22,7 @@ SELECT ok(
 
 -- Test 4: Verify contacts CSV contains header row
 SELECT ok(
-    (SELECT private.export_contacts_csv() LIKE 'company_name,contact_name,title,email,phone,email_subject,email_body,text_message%'),
+    (SELECT private.export_contacts_csv() LIKE 'company_name,contact_name,first_name,middle_name,last_name,title,email,phone,email_subject,email_body,text_message%'),
     'Contacts CSV should start with proper header row'
 );
 

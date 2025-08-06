@@ -190,3 +190,4 @@ redirectEmailsFromBucket.zip
 examples/
 enqueue_company_for_processing.sh
 .old/
+.backups/

@@ -12,12 +12,12 @@ const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_KEY);
 const mockGenerateEmail = async (contact: ContactInfo, apiKey: string, apiUrl?: string): Promise<EmailResult> => {
     return {
         subject: `Saw your truck on Main Street`,
-        body: `Hey ${contact.name || 'there'}, I'm Izzy from Good Hope Advisors. I saw your truck on Main Street and thought I'd reach out. We help ${contact.industry?.[0] || 'business'} owners sell their business successfully. Would love to set up a free call to discuss your goals. PS: Reply 'not interested' to opt out. Pic attached.`
+        body: `Hey ${contact.firstName || contact.name || 'there'}, I'm Izzy from Good Hope Advisors. I saw your truck on Main Street and thought I'd reach out. We help ${contact.industry?.[0] || 'business'} owners sell their business successfully. Would love to set up a free call to discuss your goals. PS: Reply 'not interested' to opt out. Pic attached.`
     };
 };
 
 const mockGenerateTextMessage = async (contact: ContactInfo, apiKey: string, apiUrl?: string): Promise<string> => {
-    return `Hey ${contact.name || 'there'}! Izzy from Good Hope Advisors here. Saw your truck on Main Street and wanted to reach out about helping ${contact.industry?.[0] || 'business'} owners sell. Free call to discuss? PS: Reply 'not interested' to opt out. Pic attached.`;
+    return `Hey ${contact.firstName || contact.name || 'there'}! Izzy from Good Hope Advisors here. Saw your truck on Main Street and wanted to reach out about helping ${contact.industry?.[0] || 'business'} owners sell. Free call to discuss? PS: Reply 'not interested' to opt out. Pic attached.`;
 };
 
 function _test(name: string, fn: () => Promise<void>) {

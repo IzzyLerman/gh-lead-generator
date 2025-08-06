@@ -27,6 +27,7 @@ interface QueueMessage {
 interface EnrichedContact {
   id: string;
   name: string | null;
+  first_name: string | null;
   email: string | null;
   phone: string | null;
   title: string | null;
@@ -67,6 +68,7 @@ export async function getContactsWithCompanyData(supabase: SupabaseClient<Databa
         .select(`
             id,
             name,
+            first_name,
             email,
             phone,
             title,
@@ -109,6 +111,7 @@ export async function getContactsWithCompanyData(supabase: SupabaseClient<Databa
         enrichedContacts.push({
             id: contact.id,
             name: contact.name,
+            first_name: contact.first_name,
             email: contact.email,
             phone: contact.phone,
             title: contact.title,
@@ -152,6 +155,7 @@ export async function createEmail(contact: EnrichedContact, overrides?: {
     
     const contactInfo: ContactInfo = {
         name: contact.name,
+        firstName: contact.first_name,
         title: contact.title,
         companyName: contact.company.name,
         industry: contact.company.industry,
@@ -187,6 +191,7 @@ export async function createTextMessage(contact: EnrichedContact, overrides?: {
     
     const contactInfo: ContactInfo = {
         name: contact.name,
+        firstName: contact.first_name,
         title: contact.title,
         companyName: contact.company.name,
         industry: contact.company.industry,
