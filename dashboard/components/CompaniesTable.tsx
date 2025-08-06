@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import {
   Table,
@@ -40,7 +40,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
     totalCount: paginatedData.totalCount
   })
 
-  const handlePageChange = async (page: number) => {
+  const handlePageChange = useCallback(async (page: number) => {
     setIsLoading(true)
     try {
       const result = await fetchCompaniesWithContactsAndPhotos({ page, pageSize: 8 })
@@ -51,7 +51,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [logger])
 
   useEffect(() => {
     logger.debug('Setting up realtime subscription')
@@ -394,7 +394,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
                           Low Revenue
                         </span>
-                        <span className="text-sm text-muted-foreground">Contact's company revenue below minimum threshold</span>
+                        <span className="text-sm text-muted-foreground">Contact&apos;s company revenue below minimum threshold</span>
                       </div>
                       <div className="flex items-center gap-3">
                         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
