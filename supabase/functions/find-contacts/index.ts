@@ -295,34 +295,43 @@ async function storeEnrichedContacts(enrichedContacts: any[], companyId: string,
 
 
         const data = await Promise.all(contactsToInsert.map(async (contact) => {
-            const {data, error} = await supabase
+            const {data: existingData, error: selectError} = await supabase
                 .from("contacts")
                 .select("id")
                 .eq("zoominfo_id", contact.zoominfo_id);
 
-            if(error) throw new Error("Failed to query the contacts tables for existing contact.");
+            if(selectError) throw new Error("Failed to query the contacts tables for existing contact.");
 
-            if( data.length && data.length > 0){
-                //update existing contact
-                const {data, error} = await supabase
+            if( existingData && existingData.length > 0){
+                const {data: updateData, error: updateError} = await supabase
                     .from("contacts")
                     .update(contact)
                     .eq("zoominfo_id", contact.zoominfo_id);
-            }else{
-                const {data, error} = await supabase
+                    
+                if (updateError) {
+                    logger.error('Error updating existing contact', { 
+                        companyId, 
+                        contactZoomInfoId: contact.zoominfo_id,
+                        error: updateError 
+                    });
+                    throw updateError;
+                }
+                return updateData;
+            } else {
+                const {data: insertData, error: insertError} = await supabase
                     .from("contacts")
                     .insert(contact);
-            }        
-            if (error) {
-                logger.error('Error storing enriched contacts', { 
-                    companyId, 
-                    contactCount: enrichedContacts.length, 
-                    error 
-                });
-                throw error;
+                    
+                if (insertError) {
+                    logger.error('Error inserting new contact', { 
+                        companyId, 
+                        contactZoomInfoId: contact.zoominfo_id,
+                        error: insertError 
+                    });
+                    throw insertError;
+                }
+                return insertData;
             }
-            return data;
-            
         }));
         
 
@@ -584,7 +593,9 @@ async function processCompanies(messages: QueueMessage[], supabase: SupabaseClie
             try {
                 const company = await getCompanyById(supabase, companyId);
                 if (!company) {
-                    throw new Error(`Company ${companyId} not found`);
+                    logger.error('Company not found', { companyId });
+                    await archiveMessage(pgmq_public, message);
+                    return { success: false, companyId, error: `Company ${companyId} not found` };
                 }
 
                 await enrichCompanyContacts(company, zoomInfoService, supabase, pgmq_public);
@@ -599,9 +610,7 @@ async function processCompanies(messages: QueueMessage[], supabase: SupabaseClie
                 
                 try {
                     await updateCompanyStatus(supabase, companyId, 'contacts_failed', null);
-                    
                     await archiveMessage(pgmq_public, message);
-                    
                 } catch (cleanupError) {
                     logger.error('Error during cleanup for company', { companyId, cleanupError });
                 }

@@ -123,6 +123,7 @@ export type Database = {
           industry: string[] | null
           name: string
           phone: string[] | null
+          revenue: number | null
           state: string | null
           status: string | null
           updated_at: string | null
@@ -138,6 +139,7 @@ export type Database = {
           industry?: string[] | null
           name: string
           phone?: string[] | null
+          revenue?: number | null
           state?: string | null
           status?: string | null
           updated_at?: string | null
@@ -153,6 +155,7 @@ export type Database = {
           industry?: string[] | null
           name?: string
           phone?: string[] | null
+          revenue?: number | null
           state?: string | null
           status?: string | null
           updated_at?: string | null
@@ -166,11 +169,13 @@ export type Database = {
           company_id: string
           created_at: string | null
           email: string | null
+          email_body: string | null
+          email_subject: string | null
           id: string
-          message: string | null
           name: string | null
           phone: string | null
           status: string | null
+          text_message: string | null
           title: string | null
           updated_at: string | null
           zoominfo_id: number | null
@@ -179,11 +184,13 @@ export type Database = {
           company_id: string
           created_at?: string | null
           email?: string | null
+          email_body?: string | null
+          email_subject?: string | null
           id?: string
-          message?: string | null
           name?: string | null
           phone?: string | null
           status?: string | null
+          text_message?: string | null
           title?: string | null
           updated_at?: string | null
           zoominfo_id?: number | null
@@ -192,11 +199,13 @@ export type Database = {
           company_id?: string
           created_at?: string | null
           email?: string | null
+          email_body?: string | null
+          email_subject?: string | null
           id?: string
-          message?: string | null
           name?: string | null
           phone?: string | null
           status?: string | null
+          text_message?: string | null
           title?: string | null
           updated_at?: string | null
           zoominfo_id?: number | null
@@ -226,6 +235,27 @@ export type Database = {
           created_at?: string | null
           id?: number
           message?: string | null
+        }
+        Relationships: []
+      }
+      queue_config: {
+        Row: {
+          created_at: string | null
+          queue_name: string
+          threshold: number
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          queue_name: string
+          threshold?: number
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          queue_name?: string
+          threshold?: number
+          updated_at?: string | null
         }
         Relationships: []
       }

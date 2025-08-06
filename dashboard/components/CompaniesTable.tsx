@@ -350,21 +350,33 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                     <div className="space-y-2">
                       <div className="flex items-center gap-3">
                         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                          Finding Contacts
+                          Enriching
                         </span>
-                        <span className="text-sm text-muted-foreground">Working on gathering contact info for the company</span>
+                        <span className="text-sm text-muted-foreground">Processing company data and finding contacts</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          Processed
+                        </span>
+                        <span className="text-sm text-muted-foreground">Company successfully processed with contacts found</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                          Not Found
+                        </span>
+                        <span className="text-sm text-muted-foreground">Company not found in ZoomInfo database</span>
                       </div>
                       <div className="flex items-center gap-3">
                         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                          Pending
+                          Low Revenue
                         </span>
-                        <span className="text-sm text-muted-foreground">Ready for outreach decision</span>
+                        <span className="text-sm text-muted-foreground">Company revenue below minimum threshold</span>
                       </div>
                       <div className="flex items-center gap-3">
                         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                          Not Interested
+                          Contacts Failed
                         </span>
-                        <span className="text-sm text-muted-foreground">Company marked as not interested</span>
+                        <span className="text-sm text-muted-foreground">Error occurred while finding contacts</span>
                       </div>
                     </div>
                   </div>
@@ -374,21 +386,21 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                     <div className="space-y-2">
                       <div className="flex items-center gap-3">
                         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                          Generating Email
+                          Generating Message
                         </span>
-                        <span className="text-sm text-muted-foreground">Automatically generating a personalized outreach email</span>
+                        <span className="text-sm text-muted-foreground">Automatically generating a personalized outreach message</span>
                       </div>
                       <div className="flex items-center gap-3">
                         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                          Ready to Send
+                          Low Revenue
                         </span>
-                        <span className="text-sm text-muted-foreground">Email ready for review and sending</span>
+                        <span className="text-sm text-muted-foreground">Contact's company revenue below minimum threshold</span>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                          Sent
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                          No Contact
                         </span>
-                        <span className="text-sm text-muted-foreground">Outreach has been completed</span>
+                        <span className="text-sm text-muted-foreground">No email or phone number available for contact</span>
                       </div>
                     </div>
                   </div>
@@ -491,16 +503,22 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                   <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
                     company.status === 'enriching' 
                       ? 'bg-yellow-100 text-yellow-800' 
-                      : company.status === 'pending'
+                      : company.status === 'processed'
+                      ? 'bg-green-100 text-green-800'
+                      : company.status === 'not_found'
+                      ? 'bg-gray-100 text-gray-800'
+                      : company.status === 'low_revenue'
                       ? 'bg-orange-100 text-orange-800'
-                      : company.status === 'not_interested'
+                      : company.status === 'contacts_failed'
                       ? 'bg-red-100 text-red-800'
-                      : 'bg-gray-100 text-gray-800'
+                      : 'bg-yellow-100 text-yellow-800'
                   }`}>
-                    {company.status === 'enriching' ? 'Finding Contacts' 
-                      : company.status === 'pending' ? 'Pending'
-                      : company.status === 'not_interested' ? 'Not Interested'
-                      : 'Finding Contacts'}
+                    {company.status === 'enriching' ? 'Enriching' 
+                      : company.status === 'processed' ? 'Processed'
+                      : company.status === 'not_found' ? 'Not Found'
+                      : company.status === 'low_revenue' ? 'Low Revenue'
+                      : company.status === 'contacts_failed' ? 'Contacts Failed'
+                      : 'Enriching'}
                   </span>
                 </TableCell>
                 <TableCell className="max-w-xs">
@@ -553,18 +571,18 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                   <TableCell></TableCell>
                   <TableCell>
                     <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                      contact.status === 'generating_email' 
+                      contact.status === 'generating_message' 
                         ? 'bg-blue-100 text-blue-800' 
-                        : contact.status === 'ready_to_send'
+                        : contact.status === 'low_revenue'
                         ? 'bg-orange-100 text-orange-800'
-                        : contact.status === 'sent'
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-gray-100 text-gray-800'
+                        : contact.status === 'no_contact'
+                        ? 'bg-gray-100 text-gray-800'
+                        : 'bg-blue-100 text-blue-800'
                     }`}>
-                      {contact.status === 'generating_email' ? 'Generating Email' 
-                        : contact.status === 'ready_to_send' ? 'Ready to Send'
-                        : contact.status === 'sent' ? 'Sent'
-                        : 'Generating Email'}
+                      {contact.status === 'generating_message' ? 'Generating Message' 
+                        : contact.status === 'low_revenue' ? 'Low Revenue'
+                        : contact.status === 'no_contact' ? 'No Contact'
+                        : 'Generating Message'}
                     </span>
                   </TableCell>
                   <TableCell>

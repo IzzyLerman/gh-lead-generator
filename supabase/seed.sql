@@ -99,29 +99,45 @@ INSERT INTO public.companies (
     'active'
   );
 
--- Insert sample contacts data (linking to companies)
+-- Insert sample contacts data (linking to companies) with ZoomInfo IDs for testing
 INSERT INTO public.contacts (
   name,
   title,
   email,
   phone,
-  company_id
+  company_id,
+  zoominfo_id,
+  status
 ) VALUES
   -- ABC Plumbing Services contacts
-  ('John Smith', 'Owner', 'john@abcplumbing.com', '+1-555-123-4567', (SELECT id FROM public.companies WHERE name = 'ABC Plumbing Services')),
-  ('Sarah Johnson', 'Office Manager', 'sarah@abcplumbing.com', '+1-555-123-4569', (SELECT id FROM public.companies WHERE name = 'ABC Plumbing Services')),
+  ('John Smith', 'Owner', 'john@abcplumbing.com', '+1-555-123-4567', (SELECT id FROM public.companies WHERE name = 'ABC Plumbing Services'), 12345, 'generating_message'),
+  ('Sarah Johnson', 'Office Manager', 'sarah@abcplumbing.com', '+1-555-123-4569', (SELECT id FROM public.companies WHERE name = 'ABC Plumbing Services'), 12346, 'processed'),
   
   -- Elite Electrical Co contacts
-  ('Mike Rodriguez', 'Lead Electrician', 'mike@eliteelectric.com', '+1-555-234-5679', (SELECT id FROM public.companies WHERE name = 'Elite Electrical Co')),
+  ('Mike Rodriguez', 'Lead Electrician', 'mike@eliteelectric.com', '+1-555-234-5679', (SELECT id FROM public.companies WHERE name = 'Elite Electrical Co'), 54321, 'generating_message'),
   
   -- Metro HVAC Solutions contacts
-  ('David Chen', 'Service Manager', 'david@metrohvac.com', '+1-555-345-6791', (SELECT id FROM public.companies WHERE name = 'Metro HVAC Solutions')),
-  ('Lisa Thompson', 'Dispatcher', 'lisa@metrohvac.com', '+1-555-345-6792', (SELECT id FROM public.companies WHERE name = 'Metro HVAC Solutions')),
-  ('Robert Wilson', 'Lead Technician', 'robert@metrohvac.com', '+1-555-345-6793', (SELECT id FROM public.companies WHERE name = 'Metro HVAC Solutions')),
+  ('David Chen', 'Service Manager', 'david@metrohvac.com', '+1-555-345-6791', (SELECT id FROM public.companies WHERE name = 'Metro HVAC Solutions'), 11111, 'processed'),
+  ('Lisa Thompson', 'Dispatcher', 'lisa@metrohvac.com', '+1-555-345-6792', (SELECT id FROM public.companies WHERE name = 'Metro HVAC Solutions'), 22222, 'processed'),
+  ('Robert Wilson', 'Lead Technician', 'robert@metrohvac.com', '+1-555-345-6793', (SELECT id FROM public.companies WHERE name = 'Metro HVAC Solutions'), 33333, 'processed'),
   
-  -- Sunshine Landscaping contacts
-  ('Maria Garcia', 'Owner', 'maria@sunshinelandscape.com', '+1-555-456-7891', (SELECT id FROM public.companies WHERE name = 'Sunshine Landscaping')),
-  ('James Martinez', 'Crew Leader', 'james@sunshinelandscape.com', '+1-555-456-7892', (SELECT id FROM public.companies WHERE name = 'Sunshine Landscaping'));
+  -- Sunshine Landscaping contacts - James Martinez phone only for testing
+  ('Maria Garcia', 'Owner', 'maria@sunshinelandscape.com', NULL, (SELECT id FROM public.companies WHERE name = 'Sunshine Landscaping'), 67890, 'generating_message'),
+  ('James Martinez', 'Crew Leader', NULL, '+1-555-456-7892', (SELECT id FROM public.companies WHERE name = 'Sunshine Landscaping'), 67891, 'generating_message');
   
   -- ProClean Janitorial - intentionally left with no contacts
+
+-- Insert sample vehicle photos linked to companies for testing
+INSERT INTO public."vehicle-photos" (
+  name,
+  location,
+  company_id,
+  status,
+  submitted_by
+) VALUES
+  ('abc_plumbing_truck.jpg', 'Denver Downtown Area', (SELECT id FROM public.companies WHERE name = 'ABC Plumbing Services'), 'processed', 'system'),
+  ('elite_electrical_van.jpg', 'Austin Tech District', (SELECT id FROM public.companies WHERE name = 'Elite Electrical Co'), 'processed', 'system'),
+  ('metro_hvac_service_truck.jpg', 'Phoenix Residential Zone', (SELECT id FROM public.companies WHERE name = 'Metro HVAC Solutions'), 'processed', 'system'),
+  ('sunshine_landscaping_trailer.jpg', 'Miami Beach Area', (SELECT id FROM public.companies WHERE name = 'Sunshine Landscaping'), 'processed', 'system'),
+  ('proclean_van.jpg', 'Seattle Business District', (SELECT id FROM public.companies WHERE name = 'ProClean Janitorial'), 'processed', 'system');
 

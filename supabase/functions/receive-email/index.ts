@@ -310,7 +310,7 @@ function validateFile(file: File) {
   const allowedTypes = ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/heic", "video/mp4", "video/mov"];
   const maxSize = 50 * 1024 * 1024; 
   
-  if (!allowedTypes.includes(file.type)) {
+  if (file.type && !allowedTypes.includes(file.type)) {
     logger.error('Invalid file type', { type: file.type, filename: file.name });
     throw new Error(`Invalid file type: ${file.type}`);
   }
@@ -872,21 +872,33 @@ export const handler = async (
       }
     }
     
+    logger.debug('Processing request', {
+      timestamp,
+      hasSignature: !!signature,
+      senderEmail,
+      attachmentCount: attachments.length
+    });
+    
     // Use content-based signature verification instead of FormData body
     const isValid = await verifyContentBasedSignature(attachments, senderEmail, timestamp, signature, webhookSecret);
     
     if (!isValid) {
-      logger.warn('Invalid signature or timestamp');
+      logger.warn('Invalid signature or timestamp', {
+        timestamp,
+        senderEmail,
+        attachmentCount: attachments.length
+      });
       return new Response(JSON.stringify({ error: "Invalid authentication" }), { 
         status: 401, 
         headers: { "Content-Type": "application/json" } 
       });
     }
     
+    logger.debug('Signature verification passed, processing attachments');
     return await processAttachments(attachments, senderEmail, supabase, pgmq_public, enqueue, videoFrameExtractor, reverseGeocoder);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.error('Handler error', { errorMessage });
+    logger.error('Handler error', { errorMessage, stack: error instanceof Error ? error.stack : undefined });
     return new Response(JSON.stringify({ error: errorMessage }), {
       status: 500,
       headers: { "Content-Type": "application/json" },

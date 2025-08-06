@@ -42,6 +42,8 @@ fi
 
 # Check if unit tests should run
 if [[ "$SUITES" == *"unit"* ]]; then
+    supabase db reset --local
+
     # Run deno tests with test environment
     echo "Running deno tests..."
     deno test --allow-all --env-file=./supabase/functions/.env.test ./supabase 

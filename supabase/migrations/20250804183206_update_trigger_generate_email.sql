@@ -99,8 +99,4 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = private;
 
--- Create trigger on email-generation queue
-CREATE TRIGGER "email_generation_trigger" 
-  AFTER INSERT ON "pgmq"."q_email-generation"
-  FOR EACH ROW 
-  EXECUTE FUNCTION private.trigger_email_generation();
+

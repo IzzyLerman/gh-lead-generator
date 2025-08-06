@@ -77,8 +77,12 @@ SELECT ok(
 );
 
 -- Test 11: Test companies CSV with NULL photo data (should show empty strings)
+-- Insert a test company without vehicle photos
+INSERT INTO public.companies (name, industry, city, state, email) 
+VALUES ('No Photos Company', ARRAY['Test Industry'], 'Test City', 'TS', ARRAY['test@nophotos.com']);
+
 SELECT ok(
-    (SELECT private.export_companies_csv() LIKE '%ABC Plumbing Services%,"",""'),
+    (SELECT private.export_companies_csv() LIKE '%No Photos Company%,"",""'),
     'Companies CSV should show empty strings for companies without vehicle photos'
 );
 
@@ -86,6 +90,7 @@ SELECT ok(
 DELETE FROM public."vehicle-photos" WHERE name = 'test-photo.jpg';
 DELETE FROM public.contacts WHERE name = 'Test Contact';
 DELETE FROM public.companies WHERE name = 'Test, Company "Quotes"';
+DELETE FROM public.companies WHERE name = 'No Photos Company';
 
 SELECT finish();
 

@@ -8,7 +8,7 @@ DECLARE
   worker_url TEXT;
   queue_max INTEGER = 1;
   worker_timeout_ms INTEGER = 5000;
-  supabase_service_role_key TEXT;
+  supabase_anon_key TEXT;
   auth_token TEXT;
   http_request_id bigint;
   response_status INTEGER;
@@ -23,17 +23,17 @@ BEGIN
   
   IF queue_size >= queue_max THEN
     worker_url := (select decrypted_secret from vault.decrypted_secrets where name = 'worker_url');
-    supabase_service_role_key := (select decrypted_secret from vault.decrypted_secrets where name = 'supabase_service_role_key');
+    supabase_anon_key := (select decrypted_secret from vault.decrypted_secrets where name = 'supabase_anon_key');
 
     if worker_url IS NULL THEN
       insert into public.debug_logs (message) VALUES ('[check_queue_size_and_trigger()] worker_url is NULL');
     END IF;
 
-    if supabase_service_role_key IS NULL THEN
-      insert into public.debug_logs (message) VALUES ('[check_queue_size_and_trigger()] supabase_service_role_key is NULL');
+    if supabase_anon_key IS NULL THEN
+      insert into public.debug_logs (message) VALUES ('[check_queue_size_and_trigger()] supabase_anon_key is NULL');
     END IF;
 
-    auth_token := 'Bearer ' || supabase_service_role_key;
+    auth_token := 'Bearer ' || supabase_anon_key;
 
     
     -- Trigger worker
