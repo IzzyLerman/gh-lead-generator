@@ -64,14 +64,9 @@ async function parseEmailAndExtractAttachments(emailBuffer) {
     logger.step('Parsing email content');
     const parsed = await simpleParser(emailBuffer);
     
-    logger.info('Email parsed successfully', { 
-      subject: parsed.subject,
-      attachmentCount: parsed.attachments ? parsed.attachments.length : 0
-    });
     
     // Extract sender email address
     const senderEmail = parsed.from?.value?.[0]?.address || parsed.from?.text || 'unknown';
-    logger.debug('Extracted sender email', { senderEmail });
     
     if (!parsed.attachments || parsed.attachments.length === 0) {
       return { attachments: [], senderEmail };
@@ -121,10 +116,6 @@ async function parseEmailAndExtractAttachments(emailBuffer) {
       }
     }
     
-    logger.info('Email processing completed', { 
-      supportedAttachments: supportedAttachments.length,
-      totalProcessed: parsed.attachments ? parsed.attachments.length : 0
-    });
     
     return {
       attachments: supportedAttachments.map(attachment => ({
@@ -147,17 +138,11 @@ async function sendAttachmentsToEndpoint(attachments, senderEmail, receiveEmailU
       return { success: true, message: 'No attachments found', processed: 0 };
     }
     
-    logger.step('Sending attachments to endpoint', { 
-      attachmentCount: attachments.length,
-      hasWebhookSecret: !!webhookSecret
-    });
-    
     const formData = new FormData();
     let headers = {};
     
     // Add sender email to form data
     formData.append('sender_email', senderEmail);
-    logger.debug('Added sender email to form data');
     
     // Combined loop for FormData creation and signature payload building
     if (webhookSecret) {
@@ -165,13 +150,6 @@ async function sendAttachmentsToEndpoint(attachments, senderEmail, receiveEmailU
       let signaturePayload = Buffer.from(senderEmail); // Include sender email in signature
       
       attachments.forEach((attachment, index) => {
-        logger.debug('Adding attachment to form data', {
-          index: index + 1,
-          filename: attachment.filename,
-          contentType: attachment.contentType,
-          size: attachment.content.length
-        });
-        
         // Add to FormData
         formData.append('attachments[]', attachment.content, {
           filename: attachment.filename,
@@ -186,7 +164,6 @@ async function sendAttachmentsToEndpoint(attachments, senderEmail, receiveEmailU
       const signature = generateSignature(signaturePayload, timestamp, webhookSecret);
       headers['X-Timestamp'] = timestamp.toString();
       headers['X-Signature'] = signature;
-      logger.debug('Added HMAC authentication headers');
     } else {
       logger.warn('No webhook secret provided - sending without authentication');
       // No webhook secret, just build FormData
@@ -239,12 +216,6 @@ async function sendAttachmentsToEndpoint(attachments, senderEmail, receiveEmailU
 }
 
 exports.handler = async (event, context) => {
-  logger.info('Lambda function started', { 
-    requestId: context.awsRequestId,
-    functionName: context.functionName,
-    remainingTimeMs: context.getRemainingTimeInMillis()
-  });
-  logger.logEvent(event, 'Processing Lambda event');
 
   try {
     const RECEIVE_EMAIL_URL = process.env.RECEIVE_EMAIL_URL;
@@ -259,7 +230,6 @@ exports.handler = async (event, context) => {
       const bucketName = s3Event.bucket.name;
       const objectKey = decodeURIComponent(s3Event.object.key.replace(/\+/g, ' '));
       
-      logger.step('Processing S3 email object', { bucket: bucketName, key: objectKey });
       
       const emailBuffer = await readEmailFromS3(bucketName, objectKey);
       
@@ -278,11 +248,7 @@ exports.handler = async (event, context) => {
       
       const result = await sendAttachmentsToEndpoint(attachments, senderEmail, RECEIVE_EMAIL_URL, WEBHOOK_SECRET);
       
-      logger.info('Lambda processing completed successfully', {
-        attachmentsProcessed: attachments.length,
-        resultSuccess: result.success
-      });
-      
+
       return {
         statusCode: 200,
         body: JSON.stringify({

@@ -4,6 +4,8 @@ export type { IZoomInfoService };
 import { MockZoomInfoService } from './zoominfo-mocks.ts';
 import { ZoomInfoAuthManager } from './zoominfo-auth.ts';
 import { createLogger } from './logger.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { Database } from './database.types.ts';
 
 const logger = createLogger('zoominfo-factory');
 
@@ -36,6 +38,13 @@ export function createZoomInfoService(
       persistSession: false
     }
   });
+
+  const supabase = createClient<Database>(url, key, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  });
   
-  return new ZoomInfoService(authManager);
+  return new ZoomInfoService(authManager, supabase);
 }

@@ -712,7 +712,15 @@ async function processAttachments(
   videoFrameExtractor?: typeof extractVideoFrameFromCloudinary,
   reverseGeocoder?: (lat: number, lon: number) => Promise<string | null>
 ): Promise<Response> {
+  logger.info('Starting attachment processing', { 
+    totalAttachments: attachments.length,
+    senderEmail 
+  });
+
   if (attachments.length > 5) {
+    logger.info('Limiting attachments to maximum of 5', { 
+      originalCount: attachments.length 
+    });
     attachments.splice(5);
   }
 
@@ -725,6 +733,12 @@ async function processAttachments(
   const errors: string[] = [];
   
   for (const file of attachments) {
+    logger.info('Processing file', { 
+      filename: file.name, 
+      type: file.type, 
+      size: file.size 
+    });
+
     let uploadData: any = null;
     try {
       validateFile(file);
@@ -760,7 +774,19 @@ async function processAttachments(
       uploadData = await uploadFileAndCreateRecord(supabase, processedFile, filename, senderEmail, undefined, coordinatesString, streetAddress);
       uploadedPaths.push(uploadData.path);
       
+      logger.info('File uploaded successfully', {
+        originalFilename: file.name,
+        storagePath: uploadData.path,
+        hasLocation: !!coordinatesString,
+        hasAddress: !!streetAddress
+      });
+      
       await enqueue(pgmq_public, uploadData.path);
+      
+      logger.info('File queued for processing', {
+        filename: file.name,
+        path: uploadData.path
+      });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
       logger.logError(error instanceof Error ? error : new Error(String(error)), 'Failed to process file', { 
@@ -781,6 +807,12 @@ async function processAttachments(
       headers: { "Content-Type": "application/json" } 
     });
   }
+
+  logger.info('Attachment processing completed', {
+    successCount: uploadedPaths.length,
+    errorCount: errors.length,
+    senderEmail
+  });
 
   const response: any = { 
     success: true, 
@@ -894,7 +926,10 @@ export const handler = async (
       });
     }
     
-    logger.debug('Signature verification passed, processing attachments');
+    logger.info('Email received and authenticated successfully', { 
+      senderEmail, 
+      attachmentCount: attachments.length 
+    });
     return await processAttachments(attachments, senderEmail, supabase, pgmq_public, enqueue, videoFrameExtractor, reverseGeocoder);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);

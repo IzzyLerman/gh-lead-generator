@@ -11,10 +11,13 @@ import {
   type ZoomInfoEnrichContactResponse
 } from './zoominfo-api.ts';
 import { createLogger } from './logger.ts';
+import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { Database } from './database.types.ts';
 
 const logger = createLogger('zoominfo-service');
 
 export interface CompanySearchInput {
+  id?: string;
   name: string;
   state?: string;
   website?: string;
@@ -26,13 +29,16 @@ export interface IZoomInfoService {
   searchContacts(params: ZoomInfoContactSearchParams): Promise<ZoomInfoContactSearchResponse>;
   enrichContacts(params: ZoomInfoEnrichContactParams): Promise<ZoomInfoEnrichContactResponse>;
   progressiveCompanySearch(input: CompanySearchInput): Promise<ZoomInfoCompanySearchResponse | null>;
+  extractCompanyZipCode(companyId: string): Promise<{ hasLocation: boolean; companyZip: string | null }>;
 }
 
 export class ZoomInfoService implements IZoomInfoService {
   private authManager: ZoomInfoAuthManager;
+  private supabase: SupabaseClient<Database>;
 
-  constructor(authManager: ZoomInfoAuthManager) {
+  constructor(authManager: ZoomInfoAuthManager, supabase: SupabaseClient<Database>) {
     this.authManager = authManager;
+    this.supabase = supabase;
   }
 
   async searchCompanies(params: ZoomInfoCompanySearchParams): Promise<ZoomInfoCompanySearchResponse> {
@@ -53,11 +59,23 @@ export class ZoomInfoService implements IZoomInfoService {
   async progressiveCompanySearch(input: CompanySearchInput): Promise<ZoomInfoCompanySearchResponse | null> {
     logger.info('Starting progressive company search', { companyName: input.name });
 
-    const searchStrategies = [
-      { companyName: input.name },
-      { companyName: input.name, companyWebsite: input.website },
-      { companyName: input.name, companyWebsite: input.website, industryKeywords: input.industries?.join(',') }
+    let searchStrategies: any[] = [
+      { companyName: input.name }
     ];
+
+    if (input.website) {
+        searchStrategies.push({companyWebsite: input.website });
+    }
+
+    if (input.id) {
+      const { hasLocation, companyZip } = await this.extractCompanyZipCode(input.id);
+      if (hasLocation && companyZip) { 
+        searchStrategies = searchStrategies.concat([
+          { companyName: input.name, zipCode: companyZip, zipCodeRadiusMiles: "100" },
+          { companyName: input.name, zipCode: companyZip, zipCodeRadiusMiles: "50" }
+        ]);
+      }
+    }
 
     let lastMultipleResultsResponse: ZoomInfoCompanySearchResponse | null = null;
 
@@ -131,5 +149,55 @@ export class ZoomInfoService implements IZoomInfoService {
 
     logger.info('All search strategies exhausted, company not found in ZoomInfo');
     return null;
+  }
+
+  async extractCompanyZipCode(companyId: string): Promise<{ hasLocation: boolean; companyZip: string | null }> {
+    logger.info('Extracting zip code for company', { companyId });
+    
+    try {
+      const { data, error } = await this.supabase
+        .from('vehicle-photos')
+        .select('location')
+        .eq('company_id', companyId)
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        logger.error('Error querying vehicle-photos', { companyId, error });
+        return { hasLocation: false, companyZip: null };
+      }
+
+      if (!data || data.length === 0) {
+        logger.info('No vehicle photos found for company', { companyId });
+        return { hasLocation: false, companyZip: null };
+      }
+
+      for (const photo of data) {
+        if (!photo.location) {
+          continue;
+        }
+
+        const locationParts = photo.location.split(',').map(part => part.trim());
+        
+        for (let i = 1; i < locationParts.length; i++) {
+          const part = locationParts[i];
+          
+          if (/^\d{5}$/.test(part)) {
+            logger.info('Found 5-digit zip code', { companyId, zipCode: part });
+            return { hasLocation: true, companyZip: part };
+          }
+          
+          if (/^\d{5}-\d{4}$/.test(part)) {
+            logger.info('Found extended zip code', { companyId, zipCode: part });
+            return { hasLocation: true, companyZip: part };
+          }
+        }
+      }
+
+      logger.info('No valid zip code found in vehicle photo locations', { companyId });
+      return { hasLocation: false, companyZip: null };
+    } catch (error) {
+      logger.error('Error extracting company zip code', { companyId, error });
+      return { hasLocation: false, companyZip: null };
+    }
   }
 }

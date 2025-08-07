@@ -1,6 +1,6 @@
 #!/usr/bin/env -S deno run --allow-net --allow-env --allow-read
 
-import { ZoomInfoAuthManager } from './supabase/functions/_shared/zoominfo-auth.ts';
+import { ZoomInfoAuthManager } from '../supabase/functions/_shared/zoominfo-auth.ts';
 import { load } from 'https://deno.land/std@0.208.0/dotenv/mod.ts';
 
 // Load environment variables from .env file

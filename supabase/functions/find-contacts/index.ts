@@ -108,7 +108,7 @@ async function getCompanyById(supabase: SupabaseClient<Database>, companyId: str
     return data as Company;
 }
 
-async function updateCompanyStatus(supabase: SupabaseClient<Database>, companyId: string, status: string, companyRevenue: number | null, zoominfo_id?: number) {
+async function updateCompanyStatus(supabase: SupabaseClient<Database>, companyId: string, status: string, companyRevenue: number | null, zoominfo_id: number | null, companySicCodes?: string, companyNaicsCodes?: string) {
     const updateData: any = { status, updated_at: new Date().toISOString() };
     if (zoominfo_id !== undefined) {
         updateData.zoominfo_id = zoominfo_id;
@@ -116,6 +116,13 @@ async function updateCompanyStatus(supabase: SupabaseClient<Database>, companyId
 
     if (companyRevenue !== undefined && companyRevenue !== null) {
         updateData.revenue = companyRevenue;
+    }
+
+    if (companySicCodes !== undefined && companySicCodes !== null) {
+        updateData.sic_codes = companySicCodes;
+    }
+    if (companyNaicsCodes !== undefined && companyNaicsCodes !== null) {
+        updateData.naics_codes = companyNaicsCodes;
     }
 
     const { error } = await supabase
@@ -134,6 +141,7 @@ async function lookupCompanyInZoomInfo(company: Company, zoomInfoService: IZoomI
     
     try {
         const searchInput = {
+            id: company.id,
             name: company.name,
             state: company.state || undefined,
             website: company.website || undefined,
@@ -191,12 +199,6 @@ async function lookupCompanyInZoomInfo(company: Company, zoomInfoService: IZoomI
         // Extract company ID from the first result
         const zoomInfoCompanyId = zoomInfoResponse.data[0].id;
         
-        logger.info('Successfully found company in ZoomInfo', {
-            companyId: company.id,
-            companyName: company.name,
-            zoomInfoCompanyId: zoomInfoCompanyId,
-            totalResults: zoomInfoResponse.totalResults
-        });
         
         return zoomInfoCompanyId;
     } catch (error) {
@@ -204,31 +206,6 @@ async function lookupCompanyInZoomInfo(company: Company, zoomInfoService: IZoomI
         throw new Error(`Failed to lookup company ${company.name} in ZoomInfo: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
-
-async function getContactsFromCompany(zoomInfoCompanyId: number, zoomInfoService: IZoomInfoService): Promise<any[]> {
-    logger.info('Getting contacts from company', { zoomInfoCompanyId });
-    
-    try {
-        // Search for contacts in the company
-        const searchParams = {
-            companyId: zoomInfoCompanyId.toString()
-        };
-        
-        const contactResponse = await zoomInfoService.searchContacts(searchParams);
-        
-        logger.info('ZoomInfo contact search response', {
-            zoomInfoCompanyId,
-            totalResults: contactResponse.totalResults,
-            contactCount: contactResponse.data?.length || 0
-        });
-        
-        return contactResponse.data || [];
-    } catch (error) {
-        logger.error('Error getting contacts from company', { zoomInfoCompanyId, error });
-        throw new Error(`Failed to get contacts from company ${zoomInfoCompanyId}: ${error instanceof Error ? error.message : String(error)}`);
-    }
-}
-
 
 async function uploadContactsToEmailQueue(enrichedContacts: ZoomInfoEnrichedContactData[], pgmq_public: SupabaseClient<Database, 'pgmq_public'>): Promise<void> {
     logger.info('Uploading contacts to email generation queue', { 
@@ -240,7 +217,7 @@ async function uploadContactsToEmailQueue(enrichedContacts: ZoomInfoEnrichedCont
         for (const contact of enrichedContacts) {
             const { error } = await pgmq_public.rpc('send', {
                 queue_name: CONSTANTS.EMAIL_QUEUE_NAME,
-                message: { contact_zoominfo_id: contact.id }
+                message: { contact_zoominfo_id: contact.zoominfo_id }
             });
             
             if (error) {
@@ -253,7 +230,8 @@ async function uploadContactsToEmailQueue(enrichedContacts: ZoomInfoEnrichedCont
         }
         
         logger.info('Successfully uploaded contacts to email generation queue', { 
-            contactCount: enrichedContacts.length 
+            contactCount: enrichedContacts.length
+
         });
     } catch (error) {
         logger.error('Error in uploadContactsToEmailQueue', { 
@@ -264,7 +242,7 @@ async function uploadContactsToEmailQueue(enrichedContacts: ZoomInfoEnrichedCont
     }
 }
 
-async function storeEnrichedContacts(enrichedContacts: any[], companyId: string, supabase: SupabaseClient<Database>, companyRevenue: number | null): Promise<{contactIds: string[], validContactsForQueue: any[]}> {
+async function storeEnrichedContacts(enrichedContacts: any[], companyId: string, supabase: SupabaseClient<Database>, execs: Boolean): Promise<{contactIds: string[], validContactsForQueue: any[]}> {
     logger.info('Storing enriched contacts', { 
         companyId, 
         contactCount: enrichedContacts.length 
@@ -273,13 +251,12 @@ async function storeEnrichedContacts(enrichedContacts: any[], companyId: string,
     try {
         const contactsToInsert = enrichedContacts.map(contact => {
             let status = 'generating_message';
-            
-            if (companyRevenue !== null && companyRevenue < CONSTANTS.REVENUE_MIN_FILTER) {
-                status = 'low_revenue';
+            if  (execs !== true) {
+                status = 'non-executive';
             } else if (!contact.email && !contact.phone) {
                 status = 'no_contact';
             }
-            
+            logger.info(`Gave contact ${contact.firstName} ${contact.lastName} status ${status}. exec = ${execs}`); 
             return {
                 company_id: companyId,
                 name: `${contact.firstName || ''} ${contact.lastName || ''}`.trim(),
@@ -297,15 +274,17 @@ async function storeEnrichedContacts(enrichedContacts: any[], companyId: string,
         });
 
 
+
         const data = await Promise.all(contactsToInsert.map(async (contact) => {
             const {data: existingData, error: selectError} = await supabase
                 .from("contacts")
-                .select("id")
+                .select("zoominfo_id")
                 .eq("zoominfo_id", contact.zoominfo_id);
 
             if(selectError) throw new Error("Failed to query the contacts tables for existing contact.");
 
             if( existingData && existingData.length > 0){
+                logger.info(`updating existing contact`);
                 const {data: updateData, error: updateError} = await supabase
                     .from("contacts")
                     .update(contact)
@@ -319,6 +298,7 @@ async function storeEnrichedContacts(enrichedContacts: any[], companyId: string,
                     });
                     throw updateError;
                 }
+                logger.info(`success updating existing contact`);
                 return updateData;
             } else {
                 const {data: insertData, error: insertError} = await supabase
@@ -336,6 +316,8 @@ async function storeEnrichedContacts(enrichedContacts: any[], companyId: string,
                 return insertData;
             }
         }));
+
+        logger.info(`Completed upload; data = ${JSON.stringify(data)}`);
         
 
         const contactIds = enrichedContacts.map(contact => contact.id);
@@ -368,7 +350,7 @@ async function enrichCompanyContacts(company: Company, zoomInfoService: IZoomInf
         const zoomInfoCompanyId = await lookupCompanyInZoomInfo(company, zoomInfoService);
         
         if (!zoomInfoCompanyId) {
-            await updateCompanyStatus(supabase, company.id, 'not_found', null);
+            await updateCompanyStatus(supabase, company.id, 'not_found', null, null);
             logger.info('Company not found in ZoomInfo, marked as not_found', {
                 companyId: company.id,
                 companyName: company.name
@@ -414,13 +396,26 @@ async function enrichCompanyContacts(company: Company, zoomInfoService: IZoomInf
         
         if (!contacts || contacts.length === 0) {
             logger.info('No contacts to enrich');
-            await updateCompanyStatus(supabase, company.id, 'processed', zoomInfoCompanyId);
+            await updateCompanyStatus(supabase, company.id, 'processed', null, zoomInfoCompanyId);
             return;
         }
-        
-        const contactsToEnrich = contacts.filter((contact: ZoomInfoContactData) => 
-            (contact.jobTitle && EXECUTIVE_TITLES.some(title => contact.jobTitle!.includes(title)))
-        );
+
+        let contactsToEnrich: any[] = [];
+        let nonExecutiveContacts: any[] = [];
+      
+        contacts.forEach( (contact) => {
+            if (contact.jobTitle && EXECUTIVE_TITLES.some(title => contact.jobTitle!.includes(title))){
+                contactsToEnrich.push(contact);
+            }else {
+                nonExecutiveContacts.push({
+                    id: contact.id,
+                    firstName: contact.firstName,
+                    lastName: contact.lastName,
+                    jobTitle: contact.jobTitle
+                });
+            }
+        }); 
+
         
         logger.info('Filtered contacts for enrichment', { 
             originalCount: contacts.length,
@@ -429,7 +424,7 @@ async function enrichCompanyContacts(company: Company, zoomInfoService: IZoomInf
         
         if (contactsToEnrich.length === 0) {
             logger.info('No contacts meet enrichment criteria');
-            await updateCompanyStatus(supabase, company.id, 'processed', zoomInfoCompanyId);
+            await updateCompanyStatus(supabase, company.id, 'processed', null, zoomInfoCompanyId);
             return;
         }
         
@@ -452,6 +447,8 @@ async function enrichCompanyContacts(company: Company, zoomInfoService: IZoomInf
                 "contactAccuracyScore",
                 "mobilePhoneDoNotCall",
                 "companyRevenueNumeric",
+                "companySicCodes",
+                "companyNaicsCodes",
                 "companyIndustries",
                 "lastUpdatedDate",
                 "externalUrls"
@@ -488,81 +485,54 @@ async function enrichCompanyContacts(company: Company, zoomInfoService: IZoomInf
                 contactAccuracyScore: contact.contactAccuracyScore
             }))
         });
-        
-        // Filter for email queue - only contacts with sufficient revenue
-        const highRevenueContacts = enrichedContacts.filter((contact: ZoomInfoEnrichedContactData) => {
-            // Check revenue filter using companyRevenueNumeric
-            const revenueMatch = !contact.companyRevenueNumeric || 
-                contact.companyRevenueNumeric >= CONSTANTS.REVENUE_MIN_FILTER;
-            
-            logger.debug('Contact revenue filter check', {
-                contactId: contact.id,
-                firstName: contact.firstName,
-                lastName: contact.lastName,
-                jobTitle: contact.jobTitle,
-                companyRevenueNumeric: contact.company?.revenueNumeric,
-                revenueMatch,
-                passedFilter: revenueMatch
-            });
-
-
-            
-            return revenueMatch;
-        });
-        
-        logger.info('Revenue filtered contacts', {
-            enrichedCount: enrichedContacts.length,
-            highRevenueCount: highRevenueContacts.length,
-            revenueFilter: CONSTANTS.REVENUE_MIN_FILTER
-        });
-        
-        // Debug logging for high revenue contacts
-        logger.debug('High revenue contacts', {
-            highRevenueContacts: highRevenueContacts.map(contact => ({
-                id: contact.id,
-                firstName: contact.firstName,
-                lastName: contact.lastName,
-                email: contact.email,
-                phone: contact.phone,
-                jobTitle: contact.jobTitle,
-                companyRevenueNumeric: contact.companyRevenueNumeric,
-                managementLevel: contact.managementLevel,
-                contactAccuracyScore: contact.contactAccuracyScore
-            }))
-        });
-        
+        let companyRevenue: number = 0;
+        let companySicCodes: string = '';
+        let companyNaicsCodes: string = '';
+        if (enrichedContacts.length > 0){
+            const firstContact = enrichedContacts[0];
+            if (firstContact.companyRevenueNumeric){
+                companyRevenue = firstContact.companyRevenueNumeric;
+            }
+            if (firstContact.companySicCodes){
+                companySicCodes = firstContact.companySicCodes;
+            }
+            if (firstContact.companyNaicsCodes){
+                companyNaicsCodes = firstContact.companyNaicsCodes;
+            }
+        }
         // Step 4: Store ALL enriched contacts in the database with proper status
         if (enrichedContacts.length > 0) {
-            const { contactIds, validContactsForQueue } = await storeEnrichedContacts(
+            const { validContactsForQueue } = await storeEnrichedContacts(
                 enrichedContacts, 
                 company.id, 
                 supabase,
-                company.revenue
+                true
             );
             
             // Step 5: Only upload contacts with valid email/phone and sufficient revenue to queue
             if (validContactsForQueue.length > 0) {
-                const contactsToQueue = enrichedContacts.filter(contact => 
-                    validContactsForQueue.some(valid => valid.zoominfo_id === contact.id)
-                );
-                await uploadContactsToEmailQueue(contactsToQueue, pgmq_public);
+                await uploadContactsToEmailQueue(validContactsForQueue, pgmq_public);
             }
         }
-        
-        // Step 6: Set company status - always 'processed' or 'low_revenue' after ZoomInfo processing
-        let finalStatus = 'processed';
-        if (enrichedContacts.length > 0 && highRevenueContacts.length === 0) {
-            finalStatus = 'low_revenue';
+        if (nonExecutiveContacts.length > 0){
+            storeEnrichedContacts(
+                nonExecutiveContacts,
+                company.id,
+                supabase,
+                false
+            );
         }
+
         
-        await updateCompanyStatus(supabase, company.id, finalStatus, company.revenue, zoomInfoCompanyId);
+        let finalStatus = companyRevenue && companyRevenue <= CONSTANTS.REVENUE_MIN_FILTER ? 'low_revenue' : 'processed';
+        
+        await updateCompanyStatus(supabase, company.id, finalStatus, companyRevenue, zoomInfoCompanyId, companySicCodes, companyNaicsCodes);
         
         logger.info('Successfully enriched contacts for company', {
             companyId: company.id,
             companyName: company.name,
             zoomInfoCompanyId,
             totalEnrichedContacts: enrichedContacts.length,
-            highRevenueContacts: highRevenueContacts.length,
             finalStatus
         });
     } catch (error) {
@@ -612,7 +582,7 @@ async function processCompanies(messages: QueueMessage[], supabase: SupabaseClie
                 logger.error('Error processing company', { companyId, error });
                 
                 try {
-                    await updateCompanyStatus(supabase, companyId, 'contacts_failed', null);
+                    await updateCompanyStatus(supabase, companyId, 'contacts_failed', null, null);
                     await archiveMessage(pgmq_public, message);
                 } catch (cleanupError) {
                     logger.error('Error during cleanup for company', { companyId, cleanupError });

@@ -49,6 +49,9 @@ export interface ZoomInfoContactData {
   hasPhone: boolean;
   companyId: number;
   companyName: string;
+  zoominfo_id?: number;
+  companySicCodes?: string;
+  companyNaicsCodes?: string;
 }
 
 export interface ZoomInfoContactSearchResponse {
@@ -88,6 +91,9 @@ export interface ZoomInfoEnrichedContactData {
   company?: {
     revenueNumeric?: number;
   };
+  zoominfo_id?: number;
+  companySicCodes?: string;
+  companyNaicsCodes?: string;
 }
 
 export interface ZoomInfoEnrichContactResponse {

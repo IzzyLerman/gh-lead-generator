@@ -92,15 +92,24 @@ export type Database = {
         Returns: undefined
       }
       upsert_company: {
-        Args: {
-          p_name: string
-          p_email: string
-          p_phone: string
-          p_industry: string[]
-          p_city: string
-          p_state: string
-          p_website: string
-        }
+        Args:
+          | {
+              p_name: string
+              p_email: string
+              p_phone: string
+              p_industry: string[]
+              p_city: string
+              p_state: string
+            }
+          | {
+              p_name: string
+              p_email: string
+              p_phone: string
+              p_industry: string[]
+              p_city: string
+              p_state: string
+              p_website: string
+            }
         Returns: Json
       }
     }
@@ -121,9 +130,11 @@ export type Database = {
           group: string | null
           id: string
           industry: string[] | null
+          naics_codes: string | null
           name: string
           phone: string[] | null
           revenue: number | null
+          sic_codes: string | null
           state: string | null
           status: string | null
           updated_at: string | null
@@ -137,9 +148,11 @@ export type Database = {
           group?: string | null
           id?: string
           industry?: string[] | null
+          naics_codes?: string | null
           name: string
           phone?: string[] | null
           revenue?: number | null
+          sic_codes?: string | null
           state?: string | null
           status?: string | null
           updated_at?: string | null
@@ -153,9 +166,11 @@ export type Database = {
           group?: string | null
           id?: string
           industry?: string[] | null
+          naics_codes?: string | null
           name?: string
           phone?: string[] | null
           revenue?: number | null
+          sic_codes?: string | null
           state?: string | null
           status?: string | null
           updated_at?: string | null

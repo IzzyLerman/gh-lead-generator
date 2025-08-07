@@ -88,7 +88,8 @@ export const mockZoomInfoContactSearchResponse: ZoomInfoContactSearchResponse = 
   currentPage: 1,
   data: [
     {
-      id: 98765001,
+      id: 98765001, 
+      zoominfo_id: 98765001,
       firstName: "John",
       lastName: "Smith",
       jobTitle: "CEO",
@@ -105,6 +106,7 @@ export const mockZoomInfoContactSearchResponse: ZoomInfoContactSearchResponse = 
     },
     {
       id: 98765002,
+      zoominfo_id: 98765001,
       firstName: "Jane",
       lastName: "Johnson",
       jobTitle: "President",
@@ -121,6 +123,7 @@ export const mockZoomInfoContactSearchResponse: ZoomInfoContactSearchResponse = 
     },
     {
       id: 98765003,
+      zoominfo_id: 98765001,
       firstName: "Bob",
       lastName: "Williams",
       jobTitle: "Owner",
@@ -149,6 +152,7 @@ export const mockZoomInfoEnrichContactResponse: ZoomInfoEnrichContactResponse = 
       data: [
     {
       id: 98765001,
+      zoominfo_id: 98765001,
       firstName: "John",
       lastName: "Smith",
       email: "john.smith@company.com",
@@ -172,6 +176,7 @@ export const mockZoomInfoEnrichContactResponse: ZoomInfoEnrichContactResponse = 
     },
     {
       id: 98765002,
+      zoominfo_id: 98765001,
       firstName: "Jane",
       lastName: "Johnson",
       email: "jane.johnson@company.com",
@@ -195,6 +200,7 @@ export const mockZoomInfoEnrichContactResponse: ZoomInfoEnrichContactResponse = 
     },
     {
       id: 98765003,
+      zoominfo_id: 98765001,
       firstName: "Bob",
       lastName: "Williams",
       email: "bob.williams@company.com",
@@ -294,5 +300,34 @@ export class MockZoomInfoService implements IZoomInfoService {
     }
     
     return mockZoomInfoCompanySearchResponse;
+  }
+
+  async extractCompanyZipCode(companyId: string): Promise<{ hasLocation: boolean; companyZip: string | null }> {
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    // Mock different scenarios based on company ID
+    if (companyId === 'company-with-zip') {
+      return { hasLocation: true, companyZip: '12345' };
+    }
+    
+    if (companyId === 'company-with-extended-zip') {
+      return { hasLocation: true, companyZip: '10590-8642' };
+    }
+    
+    if (companyId === 'company-no-photos') {
+      return { hasLocation: false, companyZip: null };
+    }
+    
+    if (companyId === 'company-no-location') {
+      return { hasLocation: false, companyZip: null };
+    }
+    
+    if (companyId === 'company-invalid-location') {
+      return { hasLocation: false, companyZip: null };
+    }
+    
+    // Default mock zip code for any other company
+    return { hasLocation: true, companyZip: '90210' };
   }
 }

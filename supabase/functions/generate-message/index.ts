@@ -155,6 +155,7 @@ export async function createEmail(contact: EnrichedContact, overrides?: {
     
     const contactInfo: ContactInfo = {
         name: contact.name,
+        company_id: contact.company.id,
         firstName: contact.first_name,
         title: contact.title,
         companyName: contact.company.name,
@@ -163,8 +164,11 @@ export async function createEmail(contact: EnrichedContact, overrides?: {
     };
     
     try {
+        const supabaseUrl = getEnvVar('SUPABASE_URL');
+        const supabaseKey = getEnvVar('SUPABASE_SERVICE_ROLE_KEY');
+        
         const emailGenerator = overrides?.generateEmail || generateEmail;
-        const result = await emailGenerator(contactInfo, apiKey);
+        const result = await emailGenerator(contactInfo, apiKey, supabaseUrl, supabaseKey);
         return {
             subject: result.subject,
             body: result.body
@@ -199,8 +203,11 @@ export async function createTextMessage(contact: EnrichedContact, overrides?: {
     };
     
     try {
+        const supabaseUrl = getEnvVar('SUPABASE_URL');
+        const supabaseKey = getEnvVar('SUPABASE_SERVICE_ROLE_KEY');
+        
         const textGenerator = overrides?.generateTextMessage || generateTextMessage;
-        const message = await textGenerator(contactInfo, apiKey);
+        const message = await textGenerator(contactInfo, apiKey, supabaseUrl, supabaseKey);
         return {
             message
         };
@@ -417,7 +424,10 @@ export const handler = async (req: Request, overrides?: {
             });
         }
 
-        logger.info('Processing contacts for message generation', { messageCount: messages.length });
+        logger.info('Processing contacts for message generation', { 
+            messageCount: messages.length,
+            messages: JSON.stringify(messages)
+        });
 
         await processMessages(messages, clients.supabase, clients.pgmq_public, {
             generateEmail: overrides?.generateEmail,
