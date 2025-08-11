@@ -440,7 +440,7 @@ async function enrichCompanyContacts(company: Company, zoomInfoService: IZoomInf
         
         if (!contacts || contacts.length === 0) {
             logger.info('No contacts to enrich');
-            await updateCompanyStatus(supabase, company.id, 'no_contacts', null, zoomInfoCompanyId);
+            await updateCompanyStatus(supabase, company.id, 'contacts_failed', null, zoomInfoCompanyId);
             return;
         }
 
@@ -636,7 +636,7 @@ async function processCompanies(messages: QueueMessage[], supabase: SupabaseClie
                 logger.error('Error processing company', { companyId, error });
                 
                 try {
-                    await updateCompanyStatus(supabase, companyId, 'contacts_failed', null, null);
+                    await updateCompanyStatus(supabase, companyId, 'error', null, null);
                     await archiveMessage(pgmq_public, message);
                 } catch (cleanupError) {
                     logger.error('Error during cleanup for company', { companyId, cleanupError });

@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const mime = require('mime-types');
+const { fromBuffer: fileTypeFromBuffer } = require(path.join(__dirname, '../lambda/node_modules/file-type'));
 
 require('dotenv').config({ path: path.join(__dirname, '../lambda/.env') });
 
@@ -23,7 +24,7 @@ function generateSignature(body, timestamp, secret) {
     return crypto.createHmac('sha256', secret).update(message).digest('hex');
 }
 
-function loadFile(filePath) {
+async function loadFile(filePath) {
     if (!fs.existsSync(filePath)) {
         throw new Error(`File not found: ${filePath}`);
     }
@@ -32,19 +33,45 @@ function loadFile(filePath) {
     const filename = path.basename(filePath);
     let contentType = mime.lookup(filePath) || 'application/octet-stream';
     
-    const fileName = filename.toLowerCase();
-    if (fileName.endsWith('.heic') || fileName.endsWith('.heif')) {
-        contentType = 'image/heic';
-    } else if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) {
-        contentType = 'image/jpeg';
-    } else if (fileName.endsWith('.png')) {
-        contentType = 'image/png';
-    } else if (fileName.endsWith('.webp')) {
-        contentType = 'image/webp';
-    } else if (fileName.endsWith('.mp4')) {
-        contentType = 'video/mp4';
-    } else if (fileName.endsWith('.mov')) {
-        contentType = 'video/mov';
+    try {
+        const detectedType = await fileTypeFromBuffer(content);
+        if (detectedType?.mime) {
+            contentType = detectedType.mime.toLowerCase();
+        } else {
+            // Fall back to extension-based detection if no type detected
+            const fileName = filename.toLowerCase();
+            if (fileName.endsWith('.heic') || fileName.endsWith('.heif')) {
+                contentType = 'image/heic';
+            } else if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) {
+                contentType = 'image/jpeg';
+            } else if (fileName.endsWith('.png')) {
+                contentType = 'image/png';
+            } else if (fileName.endsWith('.webp')) {
+                contentType = 'image/webp';
+            } else if (fileName.endsWith('.mp4')) {
+                contentType = 'video/mp4';
+            } else if (fileName.endsWith('.mov')) {
+                contentType = 'video/mov';
+            }
+        }
+    } catch (error) {
+        console.warn(`File type detection failed for ${filename}, using extension-based fallback`);
+        
+        // Fall back to extension-based detection on error
+        const fileName = filename.toLowerCase();
+        if (fileName.endsWith('.heic') || fileName.endsWith('.heif')) {
+            contentType = 'image/heic';
+        } else if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) {
+            contentType = 'image/jpeg';
+        } else if (fileName.endsWith('.png')) {
+            contentType = 'image/png';
+        } else if (fileName.endsWith('.webp')) {
+            contentType = 'image/webp';
+        } else if (fileName.endsWith('.mp4')) {
+            contentType = 'video/mp4';
+        } else if (fileName.endsWith('.mov')) {
+            contentType = 'video/mov';
+        }
     }
     
     return { filename, contentType, content };
@@ -113,7 +140,7 @@ async function main() {
         const RECEIVE_EMAIL_URL = getEnvVar('RECEIVE_EMAIL_URL');
         const WEBHOOK_SECRET = getEnvVar('WEBHOOK_SECRET');
         
-        const attachments = args.map(loadFile);
+        const attachments = await Promise.all(args.map(loadFile));
         
         const senderEmail = 'test@example.com';
         

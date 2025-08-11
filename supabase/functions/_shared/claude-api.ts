@@ -87,17 +87,21 @@ Output Format:**\nReturn your response as a single, valid JSON object using this
      \n- ${companyName}: The name of the contact's company.
      \n- ${primaryIndustry}: The prospect's industry (e.g., 'Landscaping', 'Construction').
      \n- ${streetName}: The streetName where the truck was seen. If no street name is provided, you should just skip it - use "Saw your truck yesterday" for the subject instead.
-     \n\n**Instructions:**\n1.  **Subject Line:** The subject must be exactly: "Saw your truck on ${streetName}"\n
+     \n\n**Instructions:**\n1.  
+
+**Subject Line:** The subject depends on whether a street name is provided. 
+If it is, it must be exactly: "Saw your truck on ${streetName}"\n
+If the streetName is blank, it should say "Saw your truck yesterday"
  2.  **Tone:** Write in a professional yet friendly and conversational tone. Avoid overly formal language or corporate jargon. Follow the provided email script roughly,
  making changes to make the email sound more natural. For example, if the primaryIndustry is "Roofing Contractors", you should extract roofing and only write "Roofing Industry".
-    \n3.  **Email Body - Flow & Content:**\n  Hi ${contactName}}
+    \n3.  **Email Body - Flow & Content:**
+Hi ${contactName},
 
 I spotted one of your trucks on ${streetName} earlier today (pic attached). A sharp-looking fleet is always a good sign. 
 My firm, Good Hope Advisors, specializes in helping owners in the ${primaryIndustry} industry achieve a successful exit. 
 Whether you're planning an exit in the near future or 3-5 years down the road, I'm happy to share some insights on what is currently driving valuations.
 
 Would you be open to a brief, no-obligation call next week to discuss your long-term goals?
-
 
 Best,
 Izzy
@@ -200,7 +204,7 @@ async function callClaudeAPI(prompt: string, apiKey: string, apiUrl?: string): P
 
 function parseEmailResponse(response: string): EmailResult {
   try {
-    const cleanedResponse = response.replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
+    const cleanedResponse = response.replace(/[\u0000-\u0009\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, '');
     const parsed = JSON.parse(cleanedResponse);
     if (!parsed.subject || !parsed.body) {
       throw new Error('Missing subject or body in JSON response');

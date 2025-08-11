@@ -12,7 +12,9 @@ const { createLogger } = require(loggerPath);
 let s3 = null;
 function getS3Client() {
   if (!s3) {
-    s3 = new AWS.S3();
+    s3 = new AWS.S3({
+      region: 'us-east-1'
+    });
   }
   return s3;
 }
@@ -21,7 +23,7 @@ const BUCKET_NAME = 'gh-vehicle-emails';
 
 const SUPPORTED_TYPES = [
   'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic',
-  'video/mp4', 'video/mov'
+  'video/mp4', 'video/mov', 'video/quicktime', 'video/x-msvideo', 'video/x-ms-wmv', 'video/x-flv', 'video/webm', 'video/3gpp', 'video/3gpp2', 'video/ogg', 'video/avi', 'video/mpeg', 'video/x-m4v', 'video/x-matroska'
 ];
 
 /**
@@ -44,6 +46,7 @@ async function readEmailFromS3(bucketName, key) {
     };
     
     const result = await getS3Client().getObject(params).promise();
+    //const result  = {Body: "none"};
     return result.Body;
   } catch (error) {
     logger.logError(error, 'Error reading email from S3', { bucket: bucketName, key });
@@ -82,6 +85,7 @@ async function parseEmailAndExtractAttachments(emailBuffer) {
       
       // Always run file type detection to handle misidentified files (e.g., HEIC as application/octet-stream)
       let finalMimeType = attachment.contentType?.toLowerCase();
+      logger.info(`File type: ${finalMimeType}`)
       let isSupported = false;
       
       try {
@@ -93,17 +97,53 @@ async function parseEmailAndExtractAttachments(emailBuffer) {
           // Fall back to declared content type if file type detection fails
           isSupported = finalMimeType && SUPPORTED_TYPES.includes(finalMimeType);
         }
+
+        logger.info('Comprehensive attachment debug', {
+          filename: attachment.filename,
+          declaredType: attachment.contentType,
+          finalMimeType: finalMimeType,
+          finalMimeTypeLength: finalMimeType?.length,
+          finalMimeTypeBytes: finalMimeType ? Array.from(finalMimeType).map(c =>
+        c.charCodeAt(0)) : null,
+          isSupported: isSupported,
+          supportedTypesIncludes: SUPPORTED_TYPES.includes(finalMimeType),
+          supportedTypesArray: SUPPORTED_TYPES,
+          fileTypeDetected: detectedType?.mime,
+          contentLength: attachment.content?.length
+        });
       } catch (error) {
         logger.warn('Error detecting file type', { 
           filename: attachment.filename,
           declaredType: attachment.contentType,
           error: error.message
         });
+        
+      
+      
+
+        
+
+        
+      
         // Fall back to declared content type on error
         isSupported = finalMimeType && SUPPORTED_TYPES.includes(finalMimeType);
-      }
+
+        
       
+      }
+      logger.info('About to check isSupported', {
+        isSupported,
+        filename: attachment.filename,
+        willBeAdded: isSupported === true
+      });
       if (isSupported) {
+        logger.info('Attachment being skipped - detailed info', {
+          filename: attachment.filename,
+          finalMimeType,
+          isSupported,
+          supportedTypesCheck: SUPPORTED_TYPES.includes(finalMimeType),
+          supportedTypesArray: SUPPORTED_TYPES
+        });
         supportedAttachments.push({
           ...attachment,
           contentType: finalMimeType // Use the final determined mime type
@@ -230,6 +270,7 @@ exports.handler = async (event, context) => {
       const bucketName = s3Event.bucket.name;
       const objectKey = decodeURIComponent(s3Event.object.key.replace(/\+/g, ' '));
       
+      logger.info('Processing S3 event', { bucket: bucketName, key: objectKey });
       
       const emailBuffer = await readEmailFromS3(bucketName, objectKey);
       
@@ -302,3 +343,4 @@ exports.handler = async (event, context) => {
 module.exports.resetS3Client = function() {
   s3 = null;
 }
+

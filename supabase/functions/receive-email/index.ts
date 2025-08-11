@@ -314,7 +314,7 @@ function validateFile(file: File) {
     size: file.size
   });
   
-  const allowedTypes = ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/heic", "video/mp4", "video/mov"];
+  const allowedTypes = ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/heic", "video/mp4", "video/mov", "video/quicktime"];
   const maxSize = 50 * 1024 * 1024; 
   
   if (file.type && !allowedTypes.includes(file.type)) {

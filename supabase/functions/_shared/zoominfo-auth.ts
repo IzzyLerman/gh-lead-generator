@@ -57,6 +57,12 @@ export class ZoomInfoAuthManager {
       throw new Error('Failed to obtain ZoomInfo access token');
     }
 
+    // Validate JWT format
+    const tokenParts = tokenResponse.split('.');
+    if (tokenParts.length !== 3 || tokenParts.some(part => part.length === 0)) {
+      throw new Error(`Invalid JWT token format received: ${tokenResponse}`);
+    }
+
     // JWT tokens from ZoomInfo are valid for 1 hour
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
