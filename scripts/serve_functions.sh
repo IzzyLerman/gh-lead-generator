@@ -7,5 +7,5 @@
  mkdir -p .logs
  
  # Start functions with local dev environment and pipe output to log file
- echo "Starting functions server with test environment (logging to $FUNCTIONS_LOG_FILE)..."
+ echo "Starting functions server with production environment (logging to $FUNCTIONS_LOG_FILE)..."
  supabase functions serve --no-verify-jwt --env-file=./supabase/functions/.env > "$FUNCTIONS_LOG_FILE" 2>&1 &

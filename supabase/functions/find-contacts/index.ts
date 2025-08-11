@@ -23,7 +23,6 @@ const CONSTANTS = {
   REVENUE_MIN_FILTER: 5000000
 } as const;
 
-const EXECUTIVE_TITLES = ["Owner", "Co-Owner", "Founder", "CEO","President"];
 
 const logger = createLogger('find-contacts');
 
@@ -108,8 +107,8 @@ async function getCompanyById(supabase: SupabaseClient<Database>, companyId: str
     return data as Company;
 }
 
-async function updateCompanyStatus(supabase: SupabaseClient<Database>, companyId: string, status: string, companyRevenue: number | null, zoominfo_id: number | null, companySicCodes?: string, companyNaicsCodes?: string) {
-    const updateData: any = { status, updated_at: new Date().toISOString() };
+async function updateCompanyStatus(supabase: SupabaseClient<Database>, companyId: string, status: string, companyRevenue: number | null, zoominfo_id: number | null, companySicCodes?: string, companyNaicsCodes?: string, companyPrimaryIndustry?: string|null) {
+    const updateData: any = { status: status, updated_at: new Date().toISOString() };
     if (zoominfo_id !== undefined) {
         updateData.zoominfo_id = zoominfo_id;
     }
@@ -124,6 +123,12 @@ async function updateCompanyStatus(supabase: SupabaseClient<Database>, companyId
     if (companyNaicsCodes !== undefined && companyNaicsCodes !== null) {
         updateData.naics_codes = companyNaicsCodes;
     }
+
+    if (companyPrimaryIndustry !== undefined && companyPrimaryIndustry !== null){
+        updateData.primary_industry = companyPrimaryIndustry;
+    }
+
+    logger.info(`updating company status: ${JSON.stringify(updateData)}`);
 
     const { error } = await supabase
         .from('companies')
@@ -343,6 +348,45 @@ async function storeEnrichedContacts(enrichedContacts: any[], companyId: string,
     }
 }
 
+function isExecutive(jobTitle: string) {
+    if( jobTitle.includes("Owner") || jobTitle.includes("Founder") || jobTitle.includes("CEO")){
+        return true;
+    }
+    if ( jobTitle.includes("President") && !jobTitle.includes("Vice")){
+        return true;
+    }
+    if ( jobTitle === "Admin"){
+        return true;
+    }
+
+    if ( jobTitle === "Manager" || jobTitle === "General Manager" ) {
+        return true;
+    }
+
+    if ( jobTitle === "Managing Director" || jobTitle === "Director" || jobTitle === "Proprietor" || jobTitle === "Principal") {
+        return true;
+    }
+
+    return false;
+}
+
+function extractSicCodes(sicCodes: Array<{id: string, name: string}>): string {
+    return sicCodes.map(code => code.id).join(',');
+}
+
+function extractNaicsCodes(naicsCodes: Array<{id: string, name: string}>): {codes: string, primaryIndustry: string | null} {
+    const codes = naicsCodes.map(code => code.id).join(',');
+    
+    const mostSpecificCode = naicsCodes.reduce((longest, current) => 
+        current.id.length > longest.id.length ? current : longest
+    );
+    
+    return {
+        codes,
+        primaryIndustry: mostSpecificCode.name
+    };
+}
+
 async function enrichCompanyContacts(company: Company, zoomInfoService: IZoomInfoService, supabase: SupabaseClient<Database>, pgmq_public: SupabaseClient<Database, 'pgmq_public'>): Promise<void> {
     logger.info('Enriching contacts for company', { companyId: company.id, companyName: company.name });
     
@@ -396,7 +440,7 @@ async function enrichCompanyContacts(company: Company, zoomInfoService: IZoomInf
         
         if (!contacts || contacts.length === 0) {
             logger.info('No contacts to enrich');
-            await updateCompanyStatus(supabase, company.id, 'processed', null, zoomInfoCompanyId);
+            await updateCompanyStatus(supabase, company.id, 'no_contacts', null, zoomInfoCompanyId);
             return;
         }
 
@@ -404,7 +448,7 @@ async function enrichCompanyContacts(company: Company, zoomInfoService: IZoomInf
         let nonExecutiveContacts: any[] = [];
       
         contacts.forEach( (contact) => {
-            if (contact.jobTitle && EXECUTIVE_TITLES.some(title => contact.jobTitle!.includes(title))){
+            if (isExecutive(contact.jobTitle)){
                 contactsToEnrich.push(contact);
             }else {
                 nonExecutiveContacts.push({
@@ -416,24 +460,30 @@ async function enrichCompanyContacts(company: Company, zoomInfoService: IZoomInf
             }
         }); 
 
+        if (contactsToEnrich.length === 0) {
+            logger.info('No contacts meet enrichment criteria');
+            await updateCompanyStatus(supabase, company.id, 'no_execs', null, zoomInfoCompanyId);
+            if (nonExecutiveContacts.length > 0){
+                storeEnrichedContacts(
+                    nonExecutiveContacts,
+                    company.id,
+                    supabase,
+                    false
+                );
+            }
+            return;
+        }
         
         logger.info('Filtered contacts for enrichment', { 
             originalCount: contacts.length,
             filteredCount: contactsToEnrich.length
         });
         
-        if (contactsToEnrich.length === 0) {
-            logger.info('No contacts meet enrichment criteria');
-            await updateCompanyStatus(supabase, company.id, 'processed', null, zoomInfoCompanyId);
-            return;
-        }
-        
         // Prepare enrichment params
         const enrichParams = {
             matchPersonInput: contactsToEnrich.map((contact: ZoomInfoContactData) => ({ personId: contact.id })),
             outputFields: [
                 "firstName",
-                "middleName",
                 "lastName",
                 "email",
                 "hasCanadianEmail",
@@ -485,22 +535,24 @@ async function enrichCompanyContacts(company: Company, zoomInfoService: IZoomInf
                 contactAccuracyScore: contact.contactAccuracyScore
             }))
         });
-        let companyRevenue: number = 0;
+        let companyRevenue: number | null = null;
         let companySicCodes: string = '';
         let companyNaicsCodes: string = '';
+        let companyPrimaryIndustry = null;
         if (enrichedContacts.length > 0){
-            const firstContact = enrichedContacts[0];
-            if (firstContact.companyRevenueNumeric){
-                companyRevenue = firstContact.companyRevenueNumeric;
+            const company:any = enrichedContacts[0].company;
+            if (company && company.revenueNumeric){
+                companyRevenue = company.revenueNumeric;
             }
-            if (firstContact.companySicCodes){
-                companySicCodes = firstContact.companySicCodes;
+            if (company && company.sicCodes){
+                companySicCodes = extractSicCodes(company.sicCodes); 
             }
-            if (firstContact.companyNaicsCodes){
-                companyNaicsCodes = firstContact.companyNaicsCodes;
+            if (company && company.naicsCodes){
+                const naicsResult = extractNaicsCodes(company.naicsCodes);
+                companyNaicsCodes = naicsResult.codes;
+                companyPrimaryIndustry = naicsResult.primaryIndustry;
             }
         }
-        // Step 4: Store ALL enriched contacts in the database with proper status
         if (enrichedContacts.length > 0) {
             const { validContactsForQueue } = await storeEnrichedContacts(
                 enrichedContacts, 
@@ -509,7 +561,6 @@ async function enrichCompanyContacts(company: Company, zoomInfoService: IZoomInf
                 true
             );
             
-            // Step 5: Only upload contacts with valid email/phone and sufficient revenue to queue
             if (validContactsForQueue.length > 0) {
                 await uploadContactsToEmailQueue(validContactsForQueue, pgmq_public);
             }
@@ -524,9 +575,12 @@ async function enrichCompanyContacts(company: Company, zoomInfoService: IZoomInf
         }
 
         
-        let finalStatus = companyRevenue && companyRevenue <= CONSTANTS.REVENUE_MIN_FILTER ? 'low_revenue' : 'processed';
+        let finalStatus = 'processed';
+        if (companyRevenue && companyRevenue < CONSTANTS.REVENUE_MIN_FILTER){
+            finalStatus = 'low_revenue';
+        }
         
-        await updateCompanyStatus(supabase, company.id, finalStatus, companyRevenue, zoomInfoCompanyId, companySicCodes, companyNaicsCodes);
+        await updateCompanyStatus(supabase, company.id, finalStatus, companyRevenue, zoomInfoCompanyId, companySicCodes, companyNaicsCodes, companyPrimaryIndustry);
         
         logger.info('Successfully enriched contacts for company', {
             companyId: company.id,

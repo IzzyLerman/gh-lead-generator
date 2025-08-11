@@ -13,6 +13,8 @@ export interface ZoomInfoCompanySearchParams {
   sicCodes?: string[];
   naicsCodes?: string[];
   revenueMin?: number;
+  zipCode?: string;
+  zipCodeRadiusMiles?: string;
 }
 
 export interface ZoomInfoCompanyData {
@@ -37,6 +39,7 @@ export interface ZoomInfoContactSearchParams {
 export interface ZoomInfoContactData {
   id: number;
   firstName: string;
+  middleName?: string;
   lastName: string;
   jobTitle: string;
   jobFunction?: string;

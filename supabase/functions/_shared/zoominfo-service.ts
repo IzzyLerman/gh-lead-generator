@@ -58,14 +58,16 @@ export class ZoomInfoService implements IZoomInfoService {
 
   async progressiveCompanySearch(input: CompanySearchInput): Promise<ZoomInfoCompanySearchResponse | null> {
     logger.info('Starting progressive company search', { companyName: input.name });
-
-    let searchStrategies: any[] = [
-      { companyName: input.name }
-    ];
+    
+    let searchStrategies: ZoomInfoCompanySearchParams[] = [];
 
     if (input.website) {
         searchStrategies.push({companyWebsite: input.website });
     }
+
+    searchStrategies = searchStrategies.concat([ 
+      { companyName: input.name }
+    ]); 
 
     if (input.id) {
       const { hasLocation, companyZip } = await this.extractCompanyZipCode(input.id);
@@ -77,7 +79,7 @@ export class ZoomInfoService implements IZoomInfoService {
       }
     }
 
-    let lastMultipleResultsResponse: ZoomInfoCompanySearchResponse | null = null;
+    let mostSpecificResponse: ZoomInfoCompanySearchResponse | null = null;
 
     for (let i = 0; i < searchStrategies.length; i++) {
       const strategy = searchStrategies[i];
@@ -93,16 +95,8 @@ export class ZoomInfoService implements IZoomInfoService {
         
         if (result.totalResults === 0) {
           logger.info(`Strategy ${i + 1} returned no results`);
-          
-          if (lastMultipleResultsResponse) {
-            logger.info('Using top result from previous search that had multiple results', {
-              companyId: lastMultipleResultsResponse.data[0].id,
-              companyName: lastMultipleResultsResponse.data[0].name
-            });
-            return lastMultipleResultsResponse;
-          }
-          
-          logger.info('Trying next strategy');
+
+                    
           continue;
         }
         
@@ -114,17 +108,14 @@ export class ZoomInfoService implements IZoomInfoService {
           return result;
         }
         
-        if (result.totalResults > 1 && i === searchStrategies.length - 1) {
-          logger.info(`Final strategy returned multiple results (${result.totalResults}), taking first result`, {
-            companyId: result.data[0].id,
-            companyName: result.data[0].name
-          });
-          return result;
-        }
-        
+                
         if (result.totalResults > 1) {
-          logger.info(`Strategy ${i + 1} returned ${result.totalResults} results, storing as fallback and trying more specific search`);
-          lastMultipleResultsResponse = result;
+          if (mostSpecificResponse === null || result.totalResults < mostSpecificResponse.totalResults){
+              mostSpecificResponse = result;
+              logger.info(`Strategy ${i + 1} returned ${result.totalResults} results, it's the new most specific response`);
+          } else {
+              logger.info(`Strategy ${i + 1} returned ${result.totalResults} results, ignoring it`);
+          }
         }
         
       } catch (error) {
@@ -139,12 +130,12 @@ export class ZoomInfoService implements IZoomInfoService {
       }
     }
 
-    if (lastMultipleResultsResponse) {
-      logger.info('All strategies exhausted, using stored result from previous search with multiple results', {
-        companyId: lastMultipleResultsResponse.data[0].id,
-        companyName: lastMultipleResultsResponse.data[0].name
+    if (mostSpecificResponse) {
+      logger.info(`All strategies exhausted, using the most specific response with ${mostSpecificResponse.totalResults} companies`, {
+        companyId: mostSpecificResponse.data[0].id,
+        companyName: mostSpecificResponse.data[0].name
       });
-      return lastMultipleResultsResponse;
+      return mostSpecificResponse;
     }
 
     logger.info('All search strategies exhausted, company not found in ZoomInfo');

@@ -133,6 +133,7 @@ export type Database = {
           naics_codes: string | null
           name: string
           phone: string[] | null
+          primary_industry: string | null
           revenue: number | null
           sic_codes: string | null
           state: string | null
@@ -151,6 +152,7 @@ export type Database = {
           naics_codes?: string | null
           name: string
           phone?: string[] | null
+          primary_industry?: string | null
           revenue?: number | null
           sic_codes?: string | null
           state?: string | null
@@ -169,6 +171,7 @@ export type Database = {
           naics_codes?: string | null
           name?: string
           phone?: string[] | null
+          primary_industry?: string | null
           revenue?: number | null
           sic_codes?: string | null
           state?: string | null

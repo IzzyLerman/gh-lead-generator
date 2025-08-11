@@ -1,6 +1,8 @@
 import Anthropic from 'https://esm.sh/@anthropic-ai/sdk@0.24.3';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { getNaicsIndustries } from './naics-mapper.ts';
 import { createLogger } from './logger.ts';
+import type { Database } from './database.types.ts';
 
 interface EmailResult {
   subject: string;
@@ -27,16 +29,19 @@ async function getPrimaryIndustry(
 ): Promise<string> {
   if (contact.company_id) {
     try {
-      const naicsIndustries = await getNaicsIndustries(
-        supabaseUrl,
-        supabaseKey,
-        contact.company_id
-      );
-      if (naicsIndustries.length > 0) {
-        return naicsIndustries[0];
+      const supabase = createClient<Database>(supabaseUrl, supabaseKey);
+      
+      const { data: company, error } = await supabase
+        .from('companies')
+        .select('primary_industry')
+        .eq('id', contact.company_id)
+        .single();
+      
+      if (!error && company?.primary_industry) {
+        return company.primary_industry;
       }
     } catch (error) {
-      console.error('Failed to get NAICS industries, falling back to legacy industry:', error);
+      console.error('Failed to get primary industry, falling back to legacy industry:', error);
     }
   }
   

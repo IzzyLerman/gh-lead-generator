@@ -6,8 +6,10 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import ExifReader from 'https://esm.sh/exifreader@4';
+import fileType from 'https://esm.sh/file-type@16.5.4';
 import { Database } from './../_shared/database.types.ts'
 import { createLogger } from './../_shared/logger.ts'
+import { Buffer } from 'node:buffer';
 
 interface CloudinaryUploadResponse {
   public_id: string;
@@ -118,33 +120,38 @@ async function verifyContentBasedSignature(attachments: File[], senderEmail: str
     signaturePayloads.push(new TextEncoder().encode(senderEmail));
     
     for (const attachment of attachments) {
-      // Normalize MIME type for signature verification consistency
-      let normalizedType = attachment.type;
+      // Use actual file type detection to match Lambda's behavior
+      let finalMimeType = attachment.type;
       
-      // Handle common cases where MIME detection differs between client and server
-      const fileName = attachment.name.toLowerCase();
-      if (fileName.endsWith('.heic') || fileName.endsWith('.heif')) {
-        normalizedType = 'image/heic';
-      } else if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) {
-        normalizedType = 'image/jpeg';
-      } else if (fileName.endsWith('.png')) {
-        normalizedType = 'image/png';
-      } else if (fileName.endsWith('.mp4')) {
-        normalizedType = 'video/mp4';
-      } else if (fileName.endsWith('.mov')) {
-        normalizedType = 'video/mov';
-      } else if (fileName.endsWith('.tiff') || fileName.endsWith('.tif')) {
-        normalizedType = 'image/tiff';
+      try {
+        const contentBuffer = new Uint8Array(await attachment.arrayBuffer());
+        const detectedType = await fileType.fromBuffer(contentBuffer);
+        
+        if (detectedType?.mime) {
+          finalMimeType = detectedType.mime.toLowerCase();
+        }
+        
+        // Include filename and detected content type in signature for security (matching Lambda logic)
+        const metaString = `${attachment.name}:${finalMimeType}:`;
+        const metaBuffer = new TextEncoder().encode(metaString);
+        
+        signaturePayloads.push(metaBuffer);
+        signaturePayloads.push(contentBuffer);
+      } catch (error) {
+        logger.warn('File type detection failed, using declared type', {
+          filename: attachment.name,
+          declaredType: attachment.type,
+          error: error instanceof Error ? error.message : String(error)
+        });
+        
+        // Fall back to declared content type on error
+        const metaString = `${attachment.name}:${attachment.type}:`;
+        const metaBuffer = new TextEncoder().encode(metaString);
+        const contentBuffer = new Uint8Array(await attachment.arrayBuffer());
+        
+        signaturePayloads.push(metaBuffer);
+        signaturePayloads.push(contentBuffer);
       }
-      
-      // Include filename and normalized content type in signature for security (matching Lambda logic)
-      const metaString = `${attachment.name}:${normalizedType}:`;
-      const metaBuffer = new TextEncoder().encode(metaString);
-      const contentBuffer = new Uint8Array(await attachment.arrayBuffer());
-      
-      
-      signaturePayloads.push(metaBuffer);
-      signaturePayloads.push(contentBuffer);
     }
     
     // Concatenate all payload parts
@@ -332,17 +339,18 @@ async function convertHeicToJpg(heicFile: File): Promise<File> {
   try {
     logger.debug('Starting HEIC to JPG conversion', {
       filename: heicFile.name,
-      originalSize: heicFile.size
+      originalSize: heicFile.size,
+      fileType: heicFile.type
     });
     
     const arrayBuffer = await heicFile.arrayBuffer();
-    const uint8Array = new Uint8Array(arrayBuffer);
+    const inputBuffer = Buffer.from(arrayBuffer);
     
     // @ts-ignore: heic-convert doesn't have type definitions
     const convert = (await import('npm:heic-convert@2.1.0')).default;
     
     const jpegBuffer = await convert({
-      buffer: uint8Array,
+      buffer: inputBuffer,
       format: 'JPEG',
       quality: 0.9
     });

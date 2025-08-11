@@ -1,5 +1,6 @@
 {
   "test": {
     "exclude": ["lambda/"]
-  }
+  },
+  "nodeModulesDir": "auto"
 }
