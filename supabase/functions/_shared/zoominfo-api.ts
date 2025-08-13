@@ -46,6 +46,7 @@ export interface ZoomInfoContactData {
   managementLevel?: string;
   email?: string;
   phone?: string;
+  mobilePhone?: string;
   directPhone?: string;
   hasEmail: boolean;
   hasDirect: boolean;
@@ -79,6 +80,7 @@ export interface ZoomInfoEnrichedContactData {
   email?: string;
   hasCanadianEmail?: boolean;
   phone?: string;
+  mobilePhone?: string;
   directPhoneDoNotCall?: boolean;
   street?: string;
   jobTitle?: string;

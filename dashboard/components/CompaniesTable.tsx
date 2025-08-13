@@ -265,10 +265,12 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
   const sortContactsByStatus = (contacts: Tables<'contacts'>[]) => {
     const statusOrder = {
       'ready_to_send': 1,
-      'no_contact': 2,
-      'failed': 3,
-      'non-executive': 4,
-      'generating_message': 5
+      'sent': 2,
+      'do_not_contact': 3,
+      'no_contact': 4,
+      'failed': 5,
+      'non-executive': 6,
+      'generating_message': 7
     }
     
     return [...contacts].sort((a, b) => {
@@ -443,6 +445,18 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                         <span className="text-sm text-muted-foreground">Contact is ready for outreach with personalized message</span>
                       </div>
                       <div className="flex items-center gap-3">
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                          Sent
+                        </span>
+                        <span className="text-sm text-muted-foreground">Outreach message has been sent to this contact</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                          Do Not Contact
+                        </span>
+                        <span className="text-sm text-muted-foreground">Contact should not be contacted (opted out or inappropriate)</span>
+                      </div>
+                      <div className="flex items-center gap-3">
                         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
                           No Contact
                         </span>
@@ -573,7 +587,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                   <div className="flex items-center gap-1">
                     <MapPin className="h-3 w-3 text-muted-foreground" />
                     {company.city && company.state 
-                      ? `${company.city}, ${company.state}`
+                      ? `${company.city}, ${company.state}${company.zip_code ? ` ${company.zip_code}` : ''}`
                       : company.city || company.state || '-'
                     }
                   </div>
@@ -693,6 +707,10 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                         <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
                           contact.status === 'ready_to_send' 
                             ? 'bg-green-100 text-green-800' 
+                            : contact.status === 'sent'
+                            ? 'bg-purple-100 text-purple-800'
+                            : contact.status === 'do_not_contact'
+                            ? 'bg-red-100 text-red-800'
                             : contact.status === 'no_contact'
                             ? 'bg-gray-100 text-gray-800'
                             : contact.status === 'failed'
@@ -704,6 +722,8 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                             : 'bg-blue-100 text-blue-800'
                         }`}>
                           {contact.status === 'ready_to_send' ? 'Ready to Send' 
+                            : contact.status === 'sent' ? 'Sent'
+                            : contact.status === 'do_not_contact' ? 'Do Not Contact'
                             : contact.status === 'no_contact' ? 'No Contact'
                             : contact.status === 'failed' ? 'Failed'
                             : contact.status === 'non-executive' ? 'Non-Executive'

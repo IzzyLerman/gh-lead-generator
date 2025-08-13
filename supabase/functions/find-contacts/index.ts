@@ -258,7 +258,7 @@ async function storeEnrichedContacts(enrichedContacts: any[], companyId: string,
             let status = 'generating_message';
             if  (execs !== true) {
                 status = 'non-executive';
-            } else if (!contact.email && !contact.phone) {
+            } else if (!contact.email && !contact.phone && !contact.mobilePhone) {
                 status = 'no_contact';
             }
             logger.info(`Gave contact ${contact.firstName} ${contact.lastName} status ${status}. exec = ${execs}`); 
@@ -270,7 +270,7 @@ async function storeEnrichedContacts(enrichedContacts: any[], companyId: string,
                 last_name: contact.lastName || null,
                 title: contact.jobTitle || null,
                 email: contact.email || null,
-                phone: contact.phone || null,
+                phone: contact.mobilePhone || contact.phone || null,
                 zoominfo_id: contact.id,
                 status: status,
                 created_at: new Date().toISOString(),
@@ -488,6 +488,7 @@ async function enrichCompanyContacts(company: Company, zoomInfoService: IZoomInf
                 "email",
                 "hasCanadianEmail",
                 "phone",
+                "mobilePhone",
                 "directPhoneDoNotCall",
                 "street",
                 "jobTitle",
@@ -528,7 +529,7 @@ async function enrichCompanyContacts(company: Company, zoomInfoService: IZoomInf
                 firstName: contact.firstName,
                 lastName: contact.lastName,
                 email: contact.email,
-                phone: contact.phone,
+                phone: contact.mobilePhone,
                 jobTitle: contact.jobTitle,
                 companyRevenueNumeric: contact.companyRevenueNumeric,
                 managementLevel: contact.managementLevel,

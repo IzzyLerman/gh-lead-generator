@@ -140,6 +140,7 @@ export type Database = {
           status: string | null
           updated_at: string | null
           website: string | null
+          zip_code: string | null
           zoominfo_id: number | null
         }
         Insert: {
@@ -159,6 +160,7 @@ export type Database = {
           status?: string | null
           updated_at?: string | null
           website?: string | null
+          zip_code?: string | null
           zoominfo_id?: number | null
         }
         Update: {
@@ -178,6 +180,7 @@ export type Database = {
           status?: string | null
           updated_at?: string | null
           website?: string | null
+          zip_code?: string | null
           zoominfo_id?: number | null
         }
         Relationships: []

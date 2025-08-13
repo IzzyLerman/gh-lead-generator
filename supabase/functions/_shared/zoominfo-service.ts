@@ -72,9 +72,23 @@ export class ZoomInfoService implements IZoomInfoService {
     if (input.id) {
       const { hasLocation, companyZip } = await this.extractCompanyZipCode(input.id);
       if (hasLocation && companyZip) { 
+        // Store the zip code in the companies table
+        logger.info('Storing zip code for company', { companyId: input.id, zipCode: companyZip });
+        const { error: zipUpdateError } = await this.supabase
+          .from('companies')
+          .update({ zip_code: companyZip, updated_at: new Date().toISOString() })
+          .eq('id', input.id);
+        
+        if (zipUpdateError) {
+          logger.error('Error updating company zip code', { companyId: input.id, zipCode: companyZip, error: zipUpdateError });
+        } else {
+          logger.info('Successfully updated company zip code', { companyId: input.id, zipCode: companyZip });
+        }
+        
         searchStrategies = searchStrategies.concat([
           { companyName: input.name, zipCode: companyZip, zipCodeRadiusMiles: "100" },
-          { companyName: input.name, zipCode: companyZip, zipCodeRadiusMiles: "50" }
+          { companyName: input.name, zipCode: companyZip, zipCodeRadiusMiles: "50" },
+          { companyName: input.name, zipCode: companyZip, zipCodeRadiusMiles: "10" }
         ]);
       }
     }

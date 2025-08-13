@@ -141,7 +141,7 @@ Output Format:**Return ONLY the text message content as plaintext with no extra 
  - ${companyName}: The name of the contact's company.\n-
    ${primaryIndustry}: The prospect's industry (e.g., 'Landscaping', 'Construction'). If the industry is something like "Plumbing Contractors", reformat it to fit more naturally 
  into the email body. It should also be lowercase if it doesnt start the sentence, for example "we help owners in the plumbing industry" instead of "we help owners in the Plumbing Contractors industry"   \n- ${streetName}: The streetName where the truck was seen.  \n\n**Instructions:**\n  **Tone:** Write in a professional yet friendly and conversational tone. Avoid overly formal language or corporate jargon. 
-   **Content**: Follow the provided email script roughly, making changes to make the message sound natural.
+   **Content**: Follow the provided email script roughly, making changes to make the message sound natural. Keep it concise (3-5 sentences maximum).
 ** text script **
 Hi ${contactName},
 Spotted your truck on ${streetName} (pic attached). A sharp looking fleet is always a good sign.
