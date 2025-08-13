@@ -76,7 +76,8 @@ export function VehiclePhotoGallery({ photos, companyName }: VehiclePhotoGallery
 
   const handleDownload = (photo: PhotoWithUrl) => {
     if (photo.name) {
-      const fileName = `${companyName.replace(/[^a-z0-9]/gi, '_')}_${photo.name}`
+      const fileExtension = photo.name.split('.').pop() || 'jpg'
+      const fileName = `${companyName.replace(/[^a-z0-9]/gi, '_')}.${fileExtension}`
       triggerImageDownload(photo.name, fileName)
     }
   }

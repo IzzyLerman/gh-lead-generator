@@ -11,7 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
-import { ChevronRight, ChevronDown, Mail, Phone, MapPin, Building, Download, HelpCircle, Globe, DollarSign, Hash } from 'lucide-react'
+import { ChevronRight, ChevronDown, Mail, Phone, MapPin, Building, Download, HelpCircle, Globe, DollarSign, Hash, Send } from 'lucide-react'
 import { CompanyWithContactsAndPhotos, PaginatedResult } from '@/lib/server-utils'
 import { fetchCompaniesWithContactsAndPhotos } from '@/lib/client-utils'
 import { VehiclePhotoGallery } from './VehiclePhotoGallery'
@@ -114,6 +114,11 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
             }))
           } else if (payload.eventType === 'UPDATE') {
             const updatedContact = payload.new as Tables<'contacts'>
+            console.log('Realtime contact UPDATE received:', { 
+              contactId: updatedContact.id,
+              newStatus: updatedContact.status,
+              companyId: updatedContact.company_id 
+            })
             setPaginatedData(prev => ({
               ...prev,
               data: prev.data.map(company => 
@@ -339,6 +344,52 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
       alert(`Failed to export contacts: ${(error as Error)?.message || 'Unknown error'}`)
     } finally {
       setIsExporting(null)
+    }
+  }
+
+  const updateContactStatus = async (contactId: string, newStatus: string) => {
+    try {
+      alert(`Attempting to update contact ID: ${contactId} status to ${newStatus}`)
+      console.log('Update contact status - contactId:', contactId, 'newStatus:', newStatus)
+      
+      // First, let's check if the contact exists
+      const { data: existingContact, error: selectError } = await supabase
+        .from('contacts')
+        .select('*')
+        .eq('id', contactId)
+        .single()
+      
+      console.log('Existing contact check:', { existingContact, selectError })
+      
+      if (selectError) {
+        console.error('Contact not found or select error:', selectError)
+        alert(`Contact not found: ${selectError.message}`)
+        return
+      }
+      
+      const { error, data } = await supabase
+        .from('contacts')
+        .update({ status: newStatus })
+        .eq('id', contactId)
+        .select()
+      
+      console.log('Supabase update result:', { error, data, dataLength: data?.length })
+      
+      if (error) {
+        console.error('Supabase error:', error)
+        logger.logError(error, 'Error updating contact status', { contactId, newStatus })
+        alert(`Failed to update contact status: ${error.message}`)
+      } else if (data && data.length === 0) {
+        console.error('No rows updated - possible RLS/permission issue')
+        alert(`No rows updated - contact ${contactId} may not be updateable due to permissions`)
+      } else {
+        console.log('Update successful:', data)
+        alert(`Successfully updated contact ${contactId} status to ${newStatus}`)
+      }
+    } catch (error) {
+      console.error('Caught error:', error)
+      logger.logError(error as Error, 'Error updating contact status', { contactId, newStatus })
+      alert(`Failed to update contact status: ${(error as Error)?.message || 'Unknown error'}`)
     }
   }
 
@@ -667,6 +718,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                     <TableCell className="font-medium text-xs text-muted-foreground">Email Subject</TableCell>
                     <TableCell className="font-medium text-xs text-muted-foreground">Email Body</TableCell>
                     <TableCell className="font-medium text-xs text-muted-foreground">Text Message</TableCell>
+                    <TableCell className="font-medium text-xs text-muted-foreground">Actions</TableCell>
                     <TableCell className="font-medium text-xs text-muted-foreground">Created</TableCell>
                     <TableCell className="font-medium text-xs text-muted-foreground">Zoominfo ID</TableCell>
                     <TableCell></TableCell>
@@ -746,12 +798,34 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                           {contact.text_message || '-'}
                         </div>
                       </TableCell>
+                      <TableCell>
+                        {contact.status === 'ready_to_send' && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              console.log('Button clicked! Contact ID:', contact.id, 'Status:', contact.status)
+                              updateContactStatus(contact.id, 'sent')
+                            }}
+                            className="h-7 px-2"
+                          >
+                            <Send className="h-3 w-3 mr-1" />
+                            Mark as Sent
+                          </Button>
+                        )}
+                        {contact.status !== 'ready_to_send' && (
+                          <div className="text-xs text-muted-foreground">
+                            Status: {contact.status}
+                          </div>
+                        )}
+                      </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
                         {formatDate(contact.created_at)}
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
                         {contact.zoominfo_id || '-'}
                       </TableCell>
+                      <TableCell></TableCell>
                       <TableCell></TableCell>
                       <TableCell></TableCell>
                       <TableCell></TableCell>

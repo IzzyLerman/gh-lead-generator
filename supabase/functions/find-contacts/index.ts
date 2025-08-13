@@ -355,7 +355,7 @@ function isExecutive(jobTitle: string) {
     if ( jobTitle.includes("President") && !jobTitle.includes("Vice")){
         return true;
     }
-    if ( jobTitle === "Admin"){
+    if ( jobTitle === "Admin" || jobTitle === "Chief Executive Officer"){
         return true;
     }
 
