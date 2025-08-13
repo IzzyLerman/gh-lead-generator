@@ -74,9 +74,9 @@ async function createEmailPrompt(
 
   return `
 
- "prompt": "You are an expert copywriter specializing in crafting compelling, casual business development emails. 
+ You are an expert copywriter specializing in crafting compelling, casual business development emails. 
  Your goal is to generate an email that feels personal and non-spammy, using a real-world sighting as a unique conversation starter.
- \n\n**Context:**\nThe sender, Izzy from Good Hope Advisors, saw a potential client's company truck on a specific street. 
+ \n\n**Context:**\nThe sender, Izzy from Good Hope Advisors, saw a potential client's company truck on a specific street.
  Izzy took a photo of the truck to include as an attachment. Good Hope Advisors helps business owners with exit planning and selling their businesses, 
  focusing on clients who are ready to sell now or planning for an exit in the next 3-5 years. The email should be a friendly, low-pressure way to initiate contact.
 
@@ -85,13 +85,13 @@ Output Format:**\nReturn your response as a single, valid JSON object using this
 
  \n\n**Input Variables:**\n- ${contactName}: First name of the contact.
      \n- ${companyName}: The name of the contact's company.
-     \n- ${primaryIndustry}: The prospect's industry (e.g., 'Landscaping', 'Construction').
-     \n- ${streetName}: The streetName where the truck was seen. If no street name is provided, you should just skip it - use "Saw your truck yesterday" for the subject instead.
+     \n- ${primaryIndustry}: The prospect's industry (e.g., 'Landscaping', 'Construction'). If the industry is something like "Plumbing Contractors", reformat it to fit more naturally 
+ into the email body. It should also be lowercase if it doesnt start the sentence, for example "we help owners in the plumbing industry" instead of "we help owners in the Plumbing Contractors industry"     \n- ${streetName}: The streetName where the truck was seen. If no street name is provided, you should just skip it - use "Saw your truck yesterday" for the subject instead.
      \n\n**Instructions:**\n1.  
 
 **Subject Line:** The subject depends on whether a street name is provided. 
 If it is, it must be exactly: "Saw your truck on ${streetName}"\n
-If the streetName is blank, it should say "Saw your truck yesterday"
+If the streetName is blank or an empty string, it should say "Saw your truck yesterday"
  2.  **Tone:** Write in a professional yet friendly and conversational tone. Avoid overly formal language or corporate jargon. Follow the provided email script roughly,
  making changes to make the email sound more natural. For example, if the primaryIndustry is "Roofing Contractors", you should extract roofing and only write "Roofing Industry".
     \n3.  **Email Body - Flow & Content:**
@@ -131,15 +131,18 @@ async function createTextPrompt(
     company_id: contact.company_id
   });
 
-  return ` "prompt": "You are an expert copywriter specializing in crafting compelling, casual business outreach text messages. 
-      Your goal is to generate an text message that feels personal and non-spammy, using a real-world sighting as a unique conversation starter.\n\n**Context:**\nThe sender, Izzy from Good Hope Advisors, saw a potential client's company truck on a specific street. Izzy took a photo of the truck to include as an attachment. Good Hope Advisors helps business owners with exit planning and selling their businesses, focusing on clients who are ready to sell now or planning for an exit in the next 3-5 years. The email should be a friendly, low-pressure way to initiate contact.
+  return `You are an expert copywriter specializing in crafting compelling, casual business outreach text messages. 
+      Your goal is to generate an text message that feels personal and non-spammy, using a real-world sighting as a unique conversation starter.\n\n
+  **Context:**\nThe sender, Izzy from Good Hope Advisors, saw a potential client's company truck on a specific street.
+      Izzy took a photo of the truck to include as an attachment. Good Hope Advisors helps business owners with exit planning and selling their businesses, focusing on clients who are ready to sell now or planning for an exit in the next 3-5 years. The email should be a friendly, low-pressure way to initiate contact.
 
-Output Format:**Return the message content as plaintext"
+Output Format:**Return ONLY the text message content as plaintext with no extra formatting or notes"
  \n\n**Input Variables:**\n- ${contactName}: First name of the contact.\n
  - ${companyName}: The name of the contact's company.\n-
-   ${primaryIndustry}: The prospect's industry (e.g., 'Landscaping', 'Construction').\n- ${streetName}: The streetName where the truck was seen.  \n\n**Instructions:**\n  **Tone:** Write in a professional yet friendly and conversational tone. Avoid overly formal language or corporate jargon. 
-   **Content**: Follow the provided email script roughly,
- making changes to make the email sound more natural. For example, if the primaryIndustry is "Roofing Contractors", you should extract roofing and only write "Roofing Industry".
+   ${primaryIndustry}: The prospect's industry (e.g., 'Landscaping', 'Construction'). If the industry is something like "Plumbing Contractors", reformat it to fit more naturally 
+ into the email body. It should also be lowercase if it doesnt start the sentence, for example "we help owners in the plumbing industry" instead of "we help owners in the Plumbing Contractors industry"   \n- ${streetName}: The streetName where the truck was seen.  \n\n**Instructions:**\n  **Tone:** Write in a professional yet friendly and conversational tone. Avoid overly formal language or corporate jargon. 
+   **Content**: Follow the provided email script roughly, making changes to make the message sound natural.
+** text script **
 Hi ${contactName},
 Spotted your truck on ${streetName} (pic attached). A sharp looking fleet is always a good sign.
 I'm Izzy with Good Hope Advisors. We help business owners in the ${primaryIndustry} industry prepare for and execute a profitable sale.
@@ -204,8 +207,8 @@ async function callClaudeAPI(prompt: string, apiKey: string, apiUrl?: string): P
 
 function parseEmailResponse(response: string): EmailResult {
   try {
-    const cleanedResponse = response.replace(/[\u0000-\u0009\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, '');
-    const parsed = JSON.parse(cleanedResponse);
+    const trimmedResponse = response.trim();
+    const parsed = JSON.parse(trimmedResponse);
     if (!parsed.subject || !parsed.body) {
       throw new Error('Missing subject or body in JSON response');
     }
@@ -225,8 +228,16 @@ export async function generateEmail(
   supabaseKey: string,
   apiUrl?: string
 ): Promise<EmailResult> {
+  const logger = createLogger('claude-api');
   const prompt = await createEmailPrompt(contact, supabaseUrl, supabaseKey);
   const response = await callClaudeAPI(prompt, apiKey);
+  
+  logger.info('Raw LLM response for email generation', {
+    contactName: contact.firstName || contact.name,
+    responseLength: response.length,
+    rawResponse: response
+  });
+  
   return parseEmailResponse(response);
 }
 
@@ -237,8 +248,17 @@ export async function generateTextMessage(
   supabaseKey: string,
   apiUrl?: string
 ): Promise<string> {
+  const logger = createLogger('claude-api');
   const prompt = await createTextPrompt(contact, supabaseUrl, supabaseKey);
-  return await callClaudeAPI(prompt, apiKey);
+  const response = await callClaudeAPI(prompt, apiKey);
+  
+  logger.info('Raw LLM response for text message generation', {
+    contactName: contact.firstName || contact.name,
+    responseLength: response.length,
+    rawResponse: response
+  });
+  
+  return response;
 }
 
 export type { ContactInfo, EmailResult };

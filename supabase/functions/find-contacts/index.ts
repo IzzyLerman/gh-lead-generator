@@ -20,7 +20,7 @@ const CONSTANTS = {
   SLEEP_SECONDS: 15,
   QUEUE_NAME: "contact-enrichment",
   EMAIL_QUEUE_NAME: "email-generation",
-  REVENUE_MIN_FILTER: 5000000
+  REVENUE_MIN_FILTER: 2000000
 } as const;
 
 

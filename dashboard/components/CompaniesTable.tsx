@@ -11,7 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
-import { ChevronRight, ChevronDown, Mail, Phone, MapPin, Building, Download, HelpCircle } from 'lucide-react'
+import { ChevronRight, ChevronDown, Mail, Phone, MapPin, Building, Download, HelpCircle, Globe, DollarSign, Hash } from 'lucide-react'
 import { CompanyWithContactsAndPhotos, PaginatedResult } from '@/lib/server-utils'
 import { fetchCompaniesWithContactsAndPhotos } from '@/lib/client-utils'
 import { VehiclePhotoGallery } from './VehiclePhotoGallery'
@@ -240,6 +240,44 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
     return nameParts.length > 0 ? nameParts.join(' ') : 'Unnamed Contact'
   }
 
+  const formatSubmittedBy = (photos: Tables<'vehicle-photos'>[]) => {
+    const uniqueSubmitters = Array.from(
+      new Set(
+        photos
+          .map(photo => photo.submitted_by)
+          .filter(submitter => submitter && submitter.trim())
+      )
+    ).slice(0, 5)
+    
+    return uniqueSubmitters.length > 0 ? uniqueSubmitters.join(', ') : '-'
+  }
+
+  const formatRevenue = (revenue: number | null) => {
+    if (!revenue) return '-'
+    return `$${revenue.toLocaleString()}`
+  }
+
+  const formatCodes = (codes: string | null) => {
+    if (!codes || codes.trim() === '') return '-'
+    return codes
+  }
+
+  const sortContactsByStatus = (contacts: Tables<'contacts'>[]) => {
+    const statusOrder = {
+      'ready_to_send': 1,
+      'no_contact': 2,
+      'failed': 3,
+      'non-executive': 4,
+      'generating_message': 5
+    }
+    
+    return [...contacts].sort((a, b) => {
+      const aOrder = statusOrder[a.status as keyof typeof statusOrder] || 99
+      const bOrder = statusOrder[b.status as keyof typeof statusOrder] || 99
+      return aOrder - bOrder
+    })
+  }
+
   const downloadCSV = (csvContent: string, filename: string) => {
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
@@ -381,6 +419,12 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                         <span className="text-sm text-muted-foreground">Company revenue below minimum threshold</span>
                       </div>
                       <div className="flex items-center gap-3">
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                          No Execs
+                        </span>
+                        <span className="text-sm text-muted-foreground">No executive contacts found for this company</span>
+                      </div>
+                      <div className="flex items-center gap-3">
                         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
                           Contacts Failed
                         </span>
@@ -393,22 +437,34 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                     <h4 className="font-medium text-sm mb-2">Contact Statuses</h4>
                     <div className="space-y-2">
                       <div className="flex items-center gap-3">
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                          Generating Message
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          Ready to Send
                         </span>
-                        <span className="text-sm text-muted-foreground">Automatically generating a personalized outreach message</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                          Low Revenue
-                        </span>
-                        <span className="text-sm text-muted-foreground">Contact&apos;s company revenue below minimum threshold</span>
+                        <span className="text-sm text-muted-foreground">Contact is ready for outreach with personalized message</span>
                       </div>
                       <div className="flex items-center gap-3">
                         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
                           No Contact
                         </span>
                         <span className="text-sm text-muted-foreground">No email or phone number available for contact</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                          Failed
+                        </span>
+                        <span className="text-sm text-muted-foreground">Error occurred during contact processing</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                          Non-Executive
+                        </span>
+                        <span className="text-sm text-muted-foreground">Contact is not in an executive role</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          Generating Message
+                        </span>
+                        <span className="text-sm text-muted-foreground">Automatically generating a personalized outreach message</span>
                       </div>
                     </div>
                   </div>
@@ -431,21 +487,25 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
         <TableHeader>
           <TableRow>
             <TableHead className="w-8"></TableHead>
-            <TableHead>Company</TableHead>
+            <TableHead>Name</TableHead>
             <TableHead>Industry</TableHead>
+            <TableHead>Website</TableHead>
+            <TableHead>Contact Info</TableHead>
             <TableHead>Location</TableHead>
-            <TableHead>Contact</TableHead>
             <TableHead>Photos</TableHead>
             <TableHead>Status</TableHead>
-            <TableHead>Message</TableHead>
+            <TableHead>Date Created</TableHead>
+            <TableHead>Revenue</TableHead>
             <TableHead>Submitted By</TableHead>
-            <TableHead>Created</TableHead>
+            <TableHead>SIC Codes</TableHead>
+            <TableHead>NAICS Codes</TableHead>
+            <TableHead>Zoominfo ID</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {isLoading ? (
             <TableRow>
-              <TableCell colSpan={10} className="text-center py-8">
+              <TableCell colSpan={14} className="text-center py-8">
                 Loading...
               </TableCell>
             </TableRow>
@@ -477,13 +537,21 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                 </TableCell>
                 <TableCell>{formatArray(company.industry)}</TableCell>
                 <TableCell>
-                  <div className="flex items-center gap-1">
-                    <MapPin className="h-3 w-3 text-muted-foreground" />
-                    {company.city && company.state 
-                      ? `${company.city}, ${company.state}`
-                      : company.city || company.state || '-'
-                    }
-                  </div>
+                  {company.website ? (
+                    <div className="flex items-center gap-1">
+                      <Globe className="h-3 w-3 text-muted-foreground" />
+                      <a 
+                        href={company.website.startsWith('http') ? company.website : `https://${company.website}`}
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="text-blue-600 hover:text-blue-800 hover:underline text-sm"
+                      >
+                        {company.website}
+                      </a>
+                    </div>
+                  ) : (
+                    <div className="text-muted-foreground">-</div>
+                  )}
                 </TableCell>
                 <TableCell>
                   <div className="space-y-1 text-sm">
@@ -502,6 +570,15 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                   </div>
                 </TableCell>
                 <TableCell>
+                  <div className="flex items-center gap-1">
+                    <MapPin className="h-3 w-3 text-muted-foreground" />
+                    {company.city && company.state 
+                      ? `${company.city}, ${company.state}`
+                      : company.city || company.state || '-'
+                    }
+                  </div>
+                </TableCell>
+                <TableCell>
                   <VehiclePhotoGallery 
                     photos={company['vehicle-photos'] || []} 
                     companyName={company.name}
@@ -517,6 +594,8 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                       ? 'bg-gray-100 text-gray-800'
                       : company.status === 'low_revenue'
                       ? 'bg-orange-100 text-orange-800'
+                      : company.status === 'no_execs'
+                      ? 'bg-purple-100 text-purple-800'
                       : company.status === 'contacts_failed'
                       ? 'bg-red-100 text-red-800'
                       : 'bg-yellow-100 text-yellow-800'
@@ -525,26 +604,39 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                       : company.status === 'processed' ? 'Processed'
                       : company.status === 'not_found' ? 'Not Found'
                       : company.status === 'low_revenue' ? 'Low Revenue'
+                      : company.status === 'no_execs' ? 'No Execs'
                       : company.status === 'contacts_failed' ? 'Contacts Failed'
                       : 'Enriching'}
                   </span>
                 </TableCell>
-                <TableCell className="max-w-xs">
-                  <div className="text-muted-foreground">-</div>
-                </TableCell>
-                <TableCell className="max-w-xs">
-                  <div className="space-y-1 text-sm">
-                    {company['vehicle-photos'] && company['vehicle-photos'].length > 0 && company['vehicle-photos'][0].submitted_by ? (
-                      <div className="truncate text-muted-foreground" title={company['vehicle-photos'][0].submitted_by}>
-                        {company['vehicle-photos'][0].submitted_by}
-                      </div>
-                    ) : (
-                      <div className="text-muted-foreground">-</div>
-                    )}
-                  </div>
-                </TableCell>
                 <TableCell className="text-muted-foreground">
                   {formatDate(company.created_at)}
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-1">
+                    <DollarSign className="h-3 w-3 text-muted-foreground" />
+                    <span className="text-sm">{formatRevenue(company.revenue)}</span>
+                  </div>
+                </TableCell>
+                <TableCell className="max-w-xs">
+                  <div className="text-sm">
+                    {formatSubmittedBy(company['vehicle-photos'] || [])}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-1">
+                    <Hash className="h-3 w-3 text-muted-foreground" />
+                    <span className="text-sm">{formatCodes(company.sic_codes)}</span>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-1">
+                    <Hash className="h-3 w-3 text-muted-foreground" />
+                    <span className="text-sm">{formatCodes(company.naics_codes)}</span>
+                  </div>
+                </TableCell>
+                <TableCell className="text-muted-foreground text-sm">
+                  {company.zoominfo_id || '-'}
                 </TableCell>
               </TableRow>
               
@@ -555,37 +647,30 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                   <TableRow className="bg-muted/50 border-t">
                     <TableCell></TableCell>
                     <TableCell className="font-medium text-xs text-muted-foreground">Full Name</TableCell>
-                    <TableCell className="font-medium text-xs text-muted-foreground">First Name</TableCell>
-                    <TableCell className="font-medium text-xs text-muted-foreground">Middle Name</TableCell>
-                    <TableCell className="font-medium text-xs text-muted-foreground">Last Name</TableCell>
+                    <TableCell className="font-medium text-xs text-muted-foreground">Job Title</TableCell>
                     <TableCell className="font-medium text-xs text-muted-foreground">Contact Info</TableCell>
                     <TableCell className="font-medium text-xs text-muted-foreground">Status</TableCell>
-                    <TableCell className="font-medium text-xs text-muted-foreground">Message</TableCell>
+                    <TableCell className="font-medium text-xs text-muted-foreground">Email Subject</TableCell>
+                    <TableCell className="font-medium text-xs text-muted-foreground">Email Body</TableCell>
+                    <TableCell className="font-medium text-xs text-muted-foreground">Text Message</TableCell>
                     <TableCell className="font-medium text-xs text-muted-foreground">Created</TableCell>
+                    <TableCell className="font-medium text-xs text-muted-foreground">Zoominfo ID</TableCell>
+                    <TableCell></TableCell>
+                    <TableCell></TableCell>
+                    <TableCell></TableCell>
                     <TableCell></TableCell>
                   </TableRow>
-                  {company.contacts.map((contact) => (
+                  {sortContactsByStatus(company.contacts).map((contact) => (
                     <TableRow key={contact.id} className="bg-muted/30">
                       <TableCell></TableCell>
                       <TableCell className="pl-8">
                         <div className="text-sm text-muted-foreground">
                           {formatFullName(contact.first_name, contact.middle_name, contact.last_name)}
-                          {contact.title && <span className="ml-2">({contact.title})</span>}
                         </div>
                       </TableCell>
                       <TableCell>
                         <div className="text-sm text-muted-foreground">
-                          {contact.first_name || '-'}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="text-sm text-muted-foreground">
-                          {contact.middle_name || '-'}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="text-sm text-muted-foreground">
-                          {contact.last_name || '-'}
+                          {contact.title || '-'}
                         </div>
                       </TableCell>
                       <TableCell>
@@ -606,44 +691,50 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                       </TableCell>
                       <TableCell>
                         <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                          contact.status === 'generating_message' 
-                            ? 'bg-blue-100 text-blue-800' 
-                            : contact.status === 'low_revenue'
-                            ? 'bg-orange-100 text-orange-800'
+                          contact.status === 'ready_to_send' 
+                            ? 'bg-green-100 text-green-800' 
                             : contact.status === 'no_contact'
                             ? 'bg-gray-100 text-gray-800'
+                            : contact.status === 'failed'
+                            ? 'bg-red-100 text-red-800'
+                            : contact.status === 'non-executive'
+                            ? 'bg-orange-100 text-orange-800'
+                            : contact.status === 'generating_message'
+                            ? 'bg-blue-100 text-blue-800'
                             : 'bg-blue-100 text-blue-800'
                         }`}>
-                          {contact.status === 'generating_message' ? 'Generating Message' 
-                            : contact.status === 'low_revenue' ? 'Low Revenue'
+                          {contact.status === 'ready_to_send' ? 'Ready to Send' 
                             : contact.status === 'no_contact' ? 'No Contact'
+                            : contact.status === 'failed' ? 'Failed'
+                            : contact.status === 'non-executive' ? 'Non-Executive'
+                            : contact.status === 'generating_message' ? 'Generating Message'
                             : 'Generating Message'}
                         </span>
                       </TableCell>
-                      <TableCell>
-                        <div className="max-w-xs">
-                          <div className="text-sm">
-                            {(contact.email_body || contact.email_subject || contact.text_message) ? (
-                              <div className="h-32 w-full overflow-y-auto bg-muted/30 dark:bg-muted/20 border rounded p-2 text-muted-foreground text-xs leading-relaxed">
-                                {contact.email_subject && (
-                                  <div className="font-medium mb-1">Email Subject: {contact.email_subject}</div>
-                                )}
-                                {contact.email_body && (
-                                  <div className="mb-2">Email: {contact.email_body}</div>
-                                )}
-                                {contact.text_message && (
-                                  <div>Text: {contact.text_message}</div>
-                                )}
-                              </div>
-                            ) : (
-                              <div className="text-muted-foreground">-</div>
-                            )}
-                          </div>
+                      <TableCell className="max-w-xs">
+                        <div className="text-sm text-muted-foreground">
+                          {contact.email_subject || '-'}
+                        </div>
+                      </TableCell>
+                      <TableCell className="max-w-xs">
+                        <div className="text-sm text-muted-foreground max-h-20 overflow-y-auto">
+                          {contact.email_body || '-'}
+                        </div>
+                      </TableCell>
+                      <TableCell className="max-w-xs">
+                        <div className="text-sm text-muted-foreground max-h-20 overflow-y-auto">
+                          {contact.text_message || '-'}
                         </div>
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
                         {formatDate(contact.created_at)}
                       </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {contact.zoominfo_id || '-'}
+                      </TableCell>
+                      <TableCell></TableCell>
+                      <TableCell></TableCell>
+                      <TableCell></TableCell>
                       <TableCell></TableCell>
                     </TableRow>
                   ))}

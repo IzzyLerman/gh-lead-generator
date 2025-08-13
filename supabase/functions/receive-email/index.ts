@@ -439,7 +439,7 @@ async function processFileForVision(file: File, videoFrameExtractor?: typeof ext
   
   if (file.type === 'image/heic') {
     return await convertHeicToJpg(file);
-  } else if (file.type === 'video/mp4' || file.type === 'video/mov') {
+  } else if (file.type.includes('video')) {
     const extractor = videoFrameExtractor ?? extractVideoFrameFromCloudinary;
     return await extractor(file);
   } else {
@@ -797,6 +797,7 @@ async function processAttachments(
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
+      logger.info(`${errorMessage}`);
       logger.logError(error instanceof Error ? error : new Error(String(error)), 'Failed to process file', { 
         filename: file.name,
         uploadPath: uploadData?.path

@@ -29,7 +29,9 @@ fi
 
 # Extract lines that contain JSON (lines with [Info], [Debug], [Warn], [Error])
 # Skip the startup lines and only process actual log entries
+# Filter out DOMParser warnings that break JSON parsing
 grep -E '\[(Info|Debug|Warn|Error)\]' "$LATEST_LOG" | \
+grep -v "Warning: DOMParser is not available" | \
 sed -E 's/^[0-9T:.-]+Z \[(Info|Debug|Warn|Error)\] //' | \
 tail -n "$LINE_COUNT" | \
 jq "$JQ_ARGS"

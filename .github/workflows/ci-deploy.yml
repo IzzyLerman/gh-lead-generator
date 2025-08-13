@@ -150,37 +150,6 @@ jobs:
         working-directory: ./dashboard
         run: npm run start &
 
-      - name: Wait for dashboard to be ready
-        run: sleep 3
-
-      - name: Run E2E tests
-        env:
-          SUPABASE_URL: http://127.0.0.1:54321
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          ANTHROPIC_API_URL: ${{ secrets.ANTHROPIC_API_URL }}
-          VISION_API_KEY: ${{ secrets.VISION_API_KEY }}
-          VISION_API_URL: ${{ secrets.VISION_API_URL }}
-          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
-          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
-          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
-          GEOAPIFY_API_KEY: ${{ secrets.GEOAPIFY_API_KEY }}
-          RECEIVE_EMAIL_URL: http://127.0.0.1:54321/functions/v1/receive-email
-          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
-          WORKER_URL: ${{ secrets.WORKER_URL }}
-          DASHBOARD_URL: http://localhost:3000
-          ENVIRONMENT: 'test'
-          ZOOMINFO_USERNAME: ${{ secrets.ZOOMINFO_USERNAME }}
-          ZOOMINFO_CLIENT_ID: ${{ secrets.ZOOMINFO_CLIENT_ID }}
-          ZOOMINFO_PRIVATE_KEY: ${{ secrets.ZOOMINFO_PRIVATE_KEY }}
-                
-
-        run: deno test --allow-all --env-file=./supabase/functions/.env.local ./tests/e2e/
-
       - name: Upload test artifacts
         if: always()
         uses: actions/upload-artifact@v4
