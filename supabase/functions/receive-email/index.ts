@@ -517,11 +517,16 @@ async function exifrExtractLocationFromExif(file: File): Promise<string | null> 
       type: file.type,
       size: file.size
     });
-    const {lat, lon} = exifr.gps(file);
-    const locationString = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+    const gpsData = await exifr.gps(file);
+    if (!gpsData || typeof gpsData.latitude !== 'number' || typeof gpsData.longitude !== 'number') {
+      logger.debug('No GPS data found in image', { filename: file.name });
+      return null;
+    }
+    const {latitude, longitude} = gpsData;
+    const locationString = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
     return locationString;
   } catch (error) {
-    logger.logError(error, `Failed to extract gps data from ${file.name}`);
+    logger.logError(error as Error, `Failed to extract gps data from ${file.name}`);
     return null;
   }
 }

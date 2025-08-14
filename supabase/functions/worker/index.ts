@@ -622,9 +622,13 @@ export async function processOCRWithLLM(ocrResponses: VisionAPIResponse[], llmAP
   });
 }
 
+function removeCompanyLLCSuffix(companyName: string): string {
+  return companyName.replace(/\s+LLC\s*$/i, '').trim();
+}
+
 function normalizeCompanyData(parsedData: ParsedCompanyData[]): CompanyUpsertData[] {
   return parsedData.map(json => removeEmptyFields({
-    name: json.name,
+    name: removeCompanyLLCSuffix(json.name),
     industry: json.industry,
     email: json.email,
     phone: json.phone,

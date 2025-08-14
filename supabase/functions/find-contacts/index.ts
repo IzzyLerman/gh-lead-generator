@@ -35,7 +35,7 @@ function getEnvVar(key: string): string {
 interface QueueMessage {
   id: number;
   msg_id: number;
-  message: { company_id: string };
+  message: { company_id: string; zoominfo_id?: number };
 }
 
 interface Company {
@@ -355,13 +355,13 @@ function isExecutive(jobTitle: string) {
     if ( jobTitle.includes("President") && !jobTitle.includes("Vice")){
         return true;
     }
-    if ( jobTitle === "Admin" || jobTitle === "Chief Executive Officer"){
+    if ( jobTitle === "Admin" || jobTitle === "Chief Executive Officer" || jobTitle === "Superintendent"){
         return true;
     }
 
-    if ( jobTitle === "Manager" || jobTitle === "General Manager" ) {
+    /*if ( jobTitle === "Manager" || jobTitle === "General Manager" ) {
         return true;
-    }
+    }*/
 
     if ( jobTitle === "Managing Director" || jobTitle === "Director" || jobTitle === "Proprietor" || jobTitle === "Principal") {
         return true;
@@ -387,19 +387,29 @@ function extractNaicsCodes(naicsCodes: Array<{id: string, name: string}>): {code
     };
 }
 
-async function enrichCompanyContacts(company: Company, zoomInfoService: IZoomInfoService, supabase: SupabaseClient<Database>, pgmq_public: SupabaseClient<Database, 'pgmq_public'>): Promise<void> {
-    logger.info('Enriching contacts for company', { companyId: company.id, companyName: company.name });
+async function enrichCompanyContacts(company: Company, zoomInfoService: IZoomInfoService, supabase: SupabaseClient<Database>, pgmq_public: SupabaseClient<Database, 'pgmq_public'>, providedZoomInfoId?: number): Promise<void> {
+    logger.info('Enriching contacts for company', { companyId: company.id, companyName: company.name, providedZoomInfoId });
     
     try {
-        const zoomInfoCompanyId = await lookupCompanyInZoomInfo(company, zoomInfoService);
+        let zoomInfoCompanyId: number | null;
         
-        if (!zoomInfoCompanyId) {
-            await updateCompanyStatus(supabase, company.id, 'not_found', null, null);
-            logger.info('Company not found in ZoomInfo, marked as not_found', {
-                companyId: company.id,
-                companyName: company.name
+        if (providedZoomInfoId) {
+            logger.info('Using provided ZoomInfo ID, skipping company lookup', { 
+                companyId: company.id, 
+                providedZoomInfoId 
             });
-            return;
+            zoomInfoCompanyId = providedZoomInfoId;
+        } else {
+            zoomInfoCompanyId = await lookupCompanyInZoomInfo(company, zoomInfoService);
+            
+            if (!zoomInfoCompanyId) {
+                await updateCompanyStatus(supabase, company.id, 'not_found', null, null);
+                logger.info('Company not found in ZoomInfo, marked as not_found', {
+                    companyId: company.id,
+                    companyName: company.name
+                });
+                return;
+            }
         }
         
         logger.info('Getting contacts from company', { zoomInfoCompanyId });
@@ -626,7 +636,8 @@ async function processCompanies(messages: QueueMessage[], supabase: SupabaseClie
                     return { success: false, companyId, error: `Company ${companyId} not found` };
                 }
 
-                await enrichCompanyContacts(company, zoomInfoService, supabase, pgmq_public);
+                const providedZoomInfoId = message.message.zoominfo_id;
+                await enrichCompanyContacts(company, zoomInfoService, supabase, pgmq_public, providedZoomInfoId);
                 
                 await deleteMessage(pgmq_public, message);
                 

@@ -205,15 +205,20 @@ async function callClaudeAPI(prompt: string, apiKey: string, apiUrl?: string): P
   return textBlock.text;
 }
 
-function parseEmailResponse(response: string): EmailResult {
+export function parseEmailResponse(response: string): EmailResult {
   try {
     const trimmedResponse = response.trim();
     
-    const sanitizedResponse = trimmedResponse;
-    /*  .replace(/\n/g, '\\n')
-      .replace(/\r/g, '\\r')
-      .replace(/\t/g, '\\t');
-    */
+    // Fix JSON by properly escaping newlines only within string values
+    const sanitizedResponse = trimmedResponse.replace(
+      /"([^"\\]*(\\.[^"\\]*)*)"/g,
+      (match, content) => {
+        return `"${content
+          .replace(/\n/g, '\\n')
+          .replace(/\r/g, '\\r')
+          .replace(/\t/g, '\\t')}"`;
+      }
+    );
 
     const parsed = JSON.parse(sanitizedResponse);
     if (!parsed.subject || !parsed.body) {

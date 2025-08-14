@@ -126,28 +126,135 @@ async function sendAttachmentsToEndpoint(attachments, senderEmail, receiveEmailU
     return result;
 }
 
+function parseArgs(args) {
+    let customUrl = null;
+    let filePaths = [];
+    
+    for (let i = 0; i < args.length; i++) {
+        if (args[i] === '-u') {
+            if (i + 1 >= args.length) {
+                throw new Error('Missing URL after -u flag');
+            }
+            customUrl = args[i + 1];
+            i++;
+        } else {
+            filePaths.push(args[i]);
+        }
+    }
+    
+    return { customUrl, filePaths };
+}
+
+function getAllFilesFromDirectory(dirPath) {
+    const files = [];
+    const entries = fs.readdirSync(dirPath);
+    
+    for (const entry of entries) {
+        const fullPath = path.join(dirPath, entry);
+        const stat = fs.statSync(fullPath);
+        
+        if (stat.isFile()) {
+            const ext = path.extname(entry).toLowerCase();
+            if (['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif', '.mp4', '.mov'].includes(ext)) {
+                files.push(fullPath);
+            }
+        }
+    }
+    
+    return files;
+}
+
 async function main() {
     try {
         const args = process.argv.slice(2);
         
-        if (args.length === 0 || args.length > 5) {
-            console.error('Usage: node trigger_workflow.js <image1> [image2] [image3] [image4] [image5]');
-            console.error('Example: node scripts/trigger_workflow.js path/to/image1.jpg path/to/image2.png');
-            console.error('Note: Accepts 1-5 image files');
+        if (args.length === 0) {
+            console.error('Usage: node trigger_workflow.js [-u <url>] <file1|directory> [file2] [file3] [file4] [file5]');
+            console.error('Examples:');
+            console.error('  node scripts/trigger_workflow.js path/to/image1.jpg path/to/image2.png');
+            console.error('  node scripts/trigger_workflow.js path/to/images/');
+            console.error('  node scripts/trigger_workflow.js -u https://custom.url/receive-email path/to/image1.jpg');
+            console.error('Note: Accepts files or a directory with image/video files');
             process.exit(1);
         }
         
-        const RECEIVE_EMAIL_URL = getEnvVar('RECEIVE_EMAIL_URL');
+        const { customUrl, filePaths } = parseArgs(args);
+        
+        if (filePaths.length === 0) {
+            console.error('Error: No files or directory specified');
+            process.exit(1);
+        }
+        
+        let allFiles = [];
+        
+        for (const filePath of filePaths) {
+            if (fs.existsSync(filePath)) {
+                const stat = fs.statSync(filePath);
+                if (stat.isDirectory()) {
+                    const dirFiles = getAllFilesFromDirectory(filePath);
+                    allFiles.push(...dirFiles);
+                } else if (stat.isFile()) {
+                    allFiles.push(filePath);
+                }
+            } else {
+                throw new Error(`File or directory not found: ${filePath}`);
+            }
+        }
+        
+        if (allFiles.length === 0) {
+            console.error('Error: No valid image/video files found');
+            process.exit(1);
+        }
+        
+        if (allFiles.length > 5) {
+            console.error(`Error: Too many files (${allFiles.length}). Maximum 5 files allowed.`);
+            process.exit(1);
+        }
+        
+        const RECEIVE_EMAIL_URL = customUrl || getEnvVar('RECEIVE_EMAIL_URL');
         const WEBHOOK_SECRET = getEnvVar('WEBHOOK_SECRET');
         
-        const attachments = await Promise.all(args.map(loadFile));
+        console.log(`Processing ${allFiles.length} files:`);
+        allFiles.forEach((file, i) => {
+            console.log(`  ${i + 1}. ${file}`);
+        });
+        console.log(`Target URL: ${RECEIVE_EMAIL_URL}`);
+        console.log('');
         
         const senderEmail = 'test@example.com';
+        const results = [];
         
-        const result = await sendAttachmentsToEndpoint(attachments, senderEmail, RECEIVE_EMAIL_URL, WEBHOOK_SECRET);
+        for (let i = 0; i < allFiles.length; i++) {
+            const filePath = allFiles[i];
+            console.log(`Processing file ${i + 1}/${allFiles.length}: ${path.basename(filePath)}`);
+            
+            try {
+                const attachment = await loadFile(filePath);
+                const result = await sendAttachmentsToEndpoint([attachment], senderEmail, RECEIVE_EMAIL_URL, WEBHOOK_SECRET);
+                results.push({ file: filePath, success: true, result });
+                console.log(`✅ File ${i + 1} processed successfully`);
+            } catch (error) {
+                results.push({ file: filePath, success: false, error: error.message });
+                console.error(`❌ File ${i + 1} failed: ${error.message}`);
+            }
+            
+            if (i < allFiles.length - 1) {
+                console.log('Waiting 1 second before next request...\n');
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+        }
         
-        console.log('✅ Success! Response:');
-        console.log(JSON.stringify(result, null, 2));
+        console.log('\n📊 Final Results:');
+        results.forEach((result, i) => {
+            const status = result.success ? '✅' : '❌';
+            console.log(`${status} File ${i + 1}: ${path.basename(result.file)}`);
+            if (!result.success) {
+                console.log(`   Error: ${result.error}`);
+            }
+        });
+        
+        const successCount = results.filter(r => r.success).length;
+        console.log(`\n${successCount}/${allFiles.length} files processed successfully`);
         
     } catch (error) {
         console.error('❌ Error:', error.message);
