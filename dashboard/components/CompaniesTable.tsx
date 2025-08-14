@@ -349,10 +349,9 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
 
   const updateContactStatus = async (contactId: string, newStatus: string) => {
     try {
-      alert(`Attempting to update contact ID: ${contactId} status to ${newStatus}`)
+      //alert(`Attempting to update contact ID: ${contactId} status to ${newStatus}`)
       console.log('Update contact status - contactId:', contactId, 'newStatus:', newStatus)
       
-      // First, let's check if the contact exists
       const { data: existingContact, error: selectError } = await supabase
         .from('contacts')
         .select('*')
@@ -384,7 +383,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
         alert(`No rows updated - contact ${contactId} may not be updateable due to permissions`)
       } else {
         console.log('Update successful:', data)
-        alert(`Successfully updated contact ${contactId} status to ${newStatus}`)
+        //alert(`Successfully updated contact ${contactId} status to ${newStatus}`)
       }
     } catch (error) {
       console.error('Caught error:', error)

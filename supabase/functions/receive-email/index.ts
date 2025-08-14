@@ -6,6 +6,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import ExifReader from 'https://esm.sh/exifreader@4';
+import exifr from 'npm:exifr';
 import fileType from 'https://esm.sh/file-type@16.5.4';
 import { Database } from './../_shared/database.types.ts'
 import { createLogger } from './../_shared/logger.ts'
@@ -509,6 +510,22 @@ function convertDMSToDD(dmsArray: any[], direction: string): number {
   return dd;
 }
 
+async function exifrExtractLocationFromExif(file: File): Promise<string | null> {
+  try{ 
+    logger.debug('Extracting EXIF location data', {
+      filename: file.name,
+      type: file.type,
+      size: file.size
+    });
+    const {lat, lon} = exifr.gps(file);
+    const locationString = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+    return locationString;
+  } catch (error) {
+    logger.logError(error, `Failed to extract gps data from ${file.name}`);
+    return null;
+  }
+}
+
 async function extractLocationFromExif(file: File): Promise<string | null> {
   try {
     logger.debug('Extracting EXIF location data', {
@@ -752,7 +769,7 @@ async function processAttachments(
       validateFile(file);
       
       // Extract EXIF location from original file BEFORE processing
-      const coordinatesString = await extractLocationFromExif(file);
+      const coordinatesString = await exifrExtractLocationFromExif(file);
       let streetAddress: string | null = null;
       
       // If we have coordinates, try to get street address

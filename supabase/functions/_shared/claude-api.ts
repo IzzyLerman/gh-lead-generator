@@ -208,7 +208,14 @@ async function callClaudeAPI(prompt: string, apiKey: string, apiUrl?: string): P
 function parseEmailResponse(response: string): EmailResult {
   try {
     const trimmedResponse = response.trim();
-    const parsed = JSON.parse(trimmedResponse);
+    
+    const sanitizedResponse = trimmedResponse;
+    /*  .replace(/\n/g, '\\n')
+      .replace(/\r/g, '\\r')
+      .replace(/\t/g, '\\t');
+    */
+
+    const parsed = JSON.parse(sanitizedResponse);
     if (!parsed.subject || !parsed.body) {
       throw new Error('Missing subject or body in JSON response');
     }
