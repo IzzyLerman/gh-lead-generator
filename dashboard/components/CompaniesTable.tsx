@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { ChevronRight, ChevronDown, Mail, Phone, MapPin, Building, Download, HelpCircle, Globe, DollarSign, Hash, Send, ChevronLeft, ArrowLeft, ArrowRight } from 'lucide-react'
+import { ChevronRight, ChevronDown, Mail, Phone, MapPin, Building, Download, HelpCircle, Globe, Hash, Send, ArrowLeft, ArrowRight, Edit } from 'lucide-react'
 import { CompanyWithContactsAndPhotos, PaginatedResult } from '@/lib/server-utils'
 import { fetchCompaniesWithContactsAndPhotos } from '@/lib/client-utils'
 import { VehiclePhotoGallery } from './VehiclePhotoGallery'
@@ -176,6 +176,7 @@ function MessageModal({ contact, company, isOpen, onClose, onMarkAsSent, onUpdat
                         size="sm"
                         onClick={() => setEditingEmailSubject(true)}
                       >
+                        <Edit className="h-3 w-3 mr-1" />
                         Edit
                       </Button>
                     )}
@@ -219,6 +220,7 @@ function MessageModal({ contact, company, isOpen, onClose, onMarkAsSent, onUpdat
                         size="sm"
                         onClick={() => setEditingEmailMessage(true)}
                       >
+                        <Edit className="h-3 w-3 mr-1" />
                         Edit
                       </Button>
                     )}
@@ -267,6 +269,7 @@ function MessageModal({ contact, company, isOpen, onClose, onMarkAsSent, onUpdat
                     size="sm"
                     onClick={() => setEditingTextMessage(true)}
                   >
+                    <Edit className="h-3 w-3 mr-1" />
                     Edit
                   </Button>
                 )}
@@ -345,6 +348,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
   const supabase = createClient()
   const logger = createLogger('companies-table')
 
+
   // Component logging
   logger.component('CompaniesTable', 'mounted', {
     initialDataLength: paginatedData.data.length,
@@ -362,7 +366,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [logger])
 
   useEffect(() => {
     logger.debug('Setting up realtime subscription')
@@ -527,7 +531,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
       logger.debug('Cleaning up realtime subscription')
       supabase.removeChannel(channel)
     }
-  }, [])
+  }, [handlePageChange, logger, supabase])
 
   const toggleExpand = (companyId: string) => {
     setExpandedCompanies(prev => {
@@ -541,10 +545,6 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
     })
   }
 
-  const formatArray = (arr: string[] | null) => {
-    if (!arr || arr.length === 0) return '-'
-    return arr.join(', ')
-  }
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return '-'
@@ -573,10 +573,6 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
     return `$${revenue.toLocaleString()}`
   }
 
-  const formatCodes = (codes: string | null) => {
-    if (!codes || codes.trim() === '') return '-'
-    return codes
-  }
 
   const sortContactsByStatus = (contacts: Tables<'contacts'>[]) => {
     const statusOrder = {
@@ -978,12 +974,12 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
       </div>
 
       <div className="rounded-md border">
-        <div ref={tableRef} className="overflow-x-auto" style={{ maxWidth: '100vw' }}>
+        <div ref={tableRef} className="overflow-x-auto relative" style={{ maxWidth: '100vw', height: '70vh' }}>
           <div style={{ minWidth: '2500px', width: '2500px' }}>
-            <Table style={{ minWidth: '2500px', width: '2500px' }}>
+            <Table style={{ minWidth: '2500px', width: '2500px', position: 'relative', borderCollapse: 'separate', borderSpacing: '0' }}>
         <TableHeader>
           <TableRow>
-            <TableHead className="w-8"></TableHead>
+            <TableHead className="w-12"></TableHead>
             <TableHead>Name</TableHead>
             <TableHead>Industry</TableHead>
             <TableHead>Website</TableHead>
