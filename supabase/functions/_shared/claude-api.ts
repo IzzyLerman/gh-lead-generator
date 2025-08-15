@@ -89,22 +89,15 @@ Output Format:**\nReturn your response as a single, valid JSON object using this
  into the email body. It should also be lowercase if it doesnt start the sentence, for example "we help owners in the plumbing industry" instead of "we help owners in the Plumbing Contractors industry"     \n- ${streetName}: The streetName where the truck was seen. If no street name is provided, you should just skip it - use "Saw your truck yesterday" for the subject instead.
      \n\n**Instructions:**\n1.  
 
-**Subject Line:** The subject depends on whether a street name is provided. 
-If it is, it must be exactly: "Saw your truck on ${streetName}"\n
-If the streetName is blank or an empty string, it should say "Saw your truck yesterday"
+**Subject Line:** 
+If the provided street name is not blank, it must be exactly: "Saw your truck on ${streetName}"\n
+If the streetName is blank or an empty string, it should say "Saw your last week"
  2.  **Tone:** Write in a professional yet friendly and conversational tone. Avoid overly formal language or corporate jargon. Follow the provided email script roughly,
  making changes to make the email sound more natural. For example, if the primaryIndustry is "Roofing Contractors", you should extract roofing and only write "Roofing Industry".
     \n3.  **Email Body - Flow & Content:**
 Hi ${contactName},
 
-I spotted one of your trucks on ${streetName} earlier today (pic attached). A sharp-looking fleet is always a good sign. 
-My firm, Good Hope Advisors, specializes in helping owners in the ${primaryIndustry} industry achieve a successful exit. 
-Whether you're planning an exit in the near future or 3-5 years down the road, I'm happy to share some insights on what is currently driving valuations.
-
-Would you be open to a brief, no-obligation call next week to discuss your long-term goals?
-
-Best,
-Izzy
+I spotted one of your trucks on Newbury Street yesterday (pic attached). My firm, Good Hope Advisors, specializes in helping owners in the ${primaryIndustry} industry achieve a successful exit. By running a competitive process and identifying value drivers that owners typically overlook, we raised a recent client’s exit valuation by 40%. Would you be open to a brief call next week with Josh Gladtke, our Managing Director, to discuss your long-term goals? Whether you're considering an exit soon or planning 3-5 years out, there are specific steps you can take now to maximize your eventual valuation.
 
 }`
 ;
@@ -144,12 +137,16 @@ Output Format:**Return ONLY the text message content as plaintext with no extra 
    **Content**: Follow the provided email script roughly, making changes to make the message sound natural. Keep it concise (3-5 sentences maximum).
 ** text script **
 Hi ${contactName},
-Spotted your truck on ${streetName} (pic attached). A sharp looking fleet is always a good sign.
+Spotted your truck on ${streetName} (pic attached).
 I'm Izzy with Good Hope Advisors. We help business owners in the ${primaryIndustry} industry prepare for and execute a profitable sale.
 
-Even if an exit is years away, the planning often starts now. I have some insights on what buyers in the space are looking for.
+Even if an exit is years away, the planning often starts now. By creating a competitive process and identifying value drivers, we raise exit valuations by 20-40%.
 
-Are you open to a 15-minute call next week?`;
+Are you open to a 15-minute call with our Managing Director Josh Gladtke next week?
+
+Best, Izzy Lerman
+Account Executive, Good Hope Advisors
+goodhopeadvisors.com`;
 }
 
 function extractStreetName(location: string): string {

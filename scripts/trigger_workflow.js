@@ -221,7 +221,7 @@ async function main() {
         console.log(`Target URL: ${RECEIVE_EMAIL_URL}`);
         console.log('');
         
-        const senderEmail = 'test@example.com';
+        const senderEmail = 'izzylerman14@gmail.com';
         const results = [];
         
         for (let i = 0; i < allFiles.length; i++) {

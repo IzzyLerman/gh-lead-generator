@@ -6,7 +6,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import ExifReader from 'https://esm.sh/exifreader@4';
-import exifr from 'npm:exifr';
 import fileType from 'https://esm.sh/file-type@16.5.4';
 import { Database } from './../_shared/database.types.ts'
 import { createLogger } from './../_shared/logger.ts'
@@ -95,7 +94,7 @@ async function verifySignature(body: ArrayBuffer, timestamp: string, signature: 
   }
 }
 
-async function verifyContentBasedSignature(attachments: File[], senderEmail: string, timestamp: string, signature: string, secret: string): Promise<boolean> {
+async function verifyContentBasedSignature(attachments: File[], senderEmail: string, timestamp: string, signature: string, secret: string, fileBuffers?: Map<string, Uint8Array>): Promise<boolean> {
   try {
     logger.debug('Starting content-based signature verification', {
       attachmentCount: attachments.length,
@@ -125,7 +124,18 @@ async function verifyContentBasedSignature(attachments: File[], senderEmail: str
       let finalMimeType = attachment.type;
       
       try {
-        const contentBuffer = new Uint8Array(await attachment.arrayBuffer());
+        // Reuse buffer if provided, otherwise create new one
+        let contentBuffer: Uint8Array;
+        if (fileBuffers && fileBuffers.has(attachment.name)) {
+          contentBuffer = fileBuffers.get(attachment.name)!;
+        } else {
+          contentBuffer = new Uint8Array(await attachment.arrayBuffer());
+          // Store buffer for reuse if map provided
+          if (fileBuffers) {
+            fileBuffers.set(attachment.name, contentBuffer);
+          }
+        }
+        
         const detectedType = await fileType.fromBuffer(contentBuffer);
         
         if (detectedType?.mime) {
@@ -148,7 +158,17 @@ async function verifyContentBasedSignature(attachments: File[], senderEmail: str
         // Fall back to declared content type on error
         const metaString = `${attachment.name}:${attachment.type}:`;
         const metaBuffer = new TextEncoder().encode(metaString);
-        const contentBuffer = new Uint8Array(await attachment.arrayBuffer());
+        
+        // Reuse buffer if available, otherwise create new one
+        let contentBuffer: Uint8Array;
+        if (fileBuffers && fileBuffers.has(attachment.name)) {
+          contentBuffer = fileBuffers.get(attachment.name)!;
+        } else {
+          contentBuffer = new Uint8Array(await attachment.arrayBuffer());
+          if (fileBuffers) {
+            fileBuffers.set(attachment.name, contentBuffer);
+          }
+        }
         
         signaturePayloads.push(metaBuffer);
         signaturePayloads.push(contentBuffer);
@@ -336,7 +356,13 @@ function generateUniqueFilename(originalName: string): string {
   return `uploads/vehicle_${crypto.randomUUID()}.${ext}`;
 }
 
-async function convertHeicToJpg(heicFile: File): Promise<File> {
+function generateOriginalFilename(originalName: string): string {
+  const match = originalName.match(/\.([^.\/]+)$/);
+  const ext = match ? match[1] : "";
+  return `originals/vehicle_${crypto.randomUUID()}.${ext}`;
+}
+
+async function convertHeicToJpg(heicFile: File, inputBuffer?: Uint8Array): Promise<File> {
   try {
     logger.debug('Starting HEIC to JPG conversion', {
       filename: heicFile.name,
@@ -344,14 +370,21 @@ async function convertHeicToJpg(heicFile: File): Promise<File> {
       fileType: heicFile.type
     });
     
-    const arrayBuffer = await heicFile.arrayBuffer();
-    const inputBuffer = Buffer.from(arrayBuffer);
+    // Use provided buffer or create new one
+    let bufferToUse: Uint8Array;
+    if (inputBuffer) {
+      bufferToUse = inputBuffer;
+    } else {
+      bufferToUse = new Uint8Array(await heicFile.arrayBuffer());
+    }
+    
+    const nodeBuffer = Buffer.from(bufferToUse);
     
     // @ts-ignore: heic-convert doesn't have type definitions
     const convert = (await import('npm:heic-convert@2.1.0')).default;
     
     const jpegBuffer = await convert({
-      buffer: inputBuffer,
+      buffer: nodeBuffer,
       format: 'JPEG',
       quality: 0.9
     });
@@ -431,7 +464,7 @@ async function extractVideoFrameFromCloudinary(videoFile: File): Promise<File> {
   }
 }
 
-async function processFileForVision(file: File, videoFrameExtractor?: typeof extractVideoFrameFromCloudinary): Promise<File> {
+async function processFileForVision(file: File, videoFrameExtractor?: typeof extractVideoFrameFromCloudinary, fileBuffer?: Uint8Array): Promise<File> {
   logger.debug('Processing file for vision', {
     filename: file.name,
     type: file.type,
@@ -439,7 +472,7 @@ async function processFileForVision(file: File, videoFrameExtractor?: typeof ext
   });
   
   if (file.type === 'image/heic') {
-    return await convertHeicToJpg(file);
+    return await convertHeicToJpg(file, fileBuffer);
   } else if (file.type.includes('video')) {
     const extractor = videoFrameExtractor ?? extractVideoFrameFromCloudinary;
     return await extractor(file);
@@ -510,23 +543,48 @@ function convertDMSToDD(dmsArray: any[], direction: string): number {
   return dd;
 }
 
-async function exifrExtractLocationFromExif(file: File): Promise<string | null> {
-  try{ 
-    logger.debug('Extracting EXIF location data', {
-      filename: file.name,
-      type: file.type,
-      size: file.size
+async function callExtractGpsFunction(imagePath: string): Promise<string | null> {
+  try {
+    logger.debug('Calling extract-gps function', { imagePath });
+    
+    const SUPABASE_URL = getEnvVar("SUPABASE_URL");
+    const SUPABASE_SERVICE_ROLE_KEY = getEnvVar("SUPABASE_SERVICE_ROLE_KEY");
+    
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/extract-gps`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+      },
+      body: JSON.stringify({ image_path: imagePath })
     });
-    const gpsData = await exifr.gps(file);
-    if (!gpsData || typeof gpsData.latitude !== 'number' || typeof gpsData.longitude !== 'number') {
-      logger.debug('No GPS data found in image', { filename: file.name });
+    
+    if (!response.ok) {
+      logger.warn('Extract GPS function call failed', { 
+        imagePath, 
+        status: response.status,
+        statusText: response.statusText
+      });
       return null;
     }
-    const {latitude, longitude} = gpsData;
-    const locationString = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
-    return locationString;
+    
+    const result = await response.json();
+    
+    if (result.latitude && result.longitude && 
+        typeof result.latitude === 'number' && typeof result.longitude === 'number') {
+      const locationString = `${result.latitude.toFixed(6)}, ${result.longitude.toFixed(6)}`;
+      logger.debug('GPS coordinates received from extract-gps function', {
+        imagePath,
+        coordinates: locationString
+      });
+      return locationString;
+    }
+    
+    logger.debug('No GPS data returned from extract-gps function', { imagePath });
+    return null;
+    
   } catch (error) {
-    logger.logError(error as Error, `Failed to extract gps data from ${file.name}`);
+    logger.logError(error as Error, `Failed to call extract-gps function for ${imagePath}`);
     return null;
   }
 }
@@ -740,7 +798,8 @@ async function processAttachments(
   pgmq_public: SupabaseClient<Database, 'pgmq_public'>,
   enqueue: typeof enqueueImageJob,
   videoFrameExtractor?: typeof extractVideoFrameFromCloudinary,
-  reverseGeocoder?: (lat: number, lon: number) => Promise<string | null>
+  reverseGeocoder?: (lat: number, lon: number) => Promise<string | null>,
+  fileBuffers?: Map<string, Uint8Array>
 ): Promise<Response> {
   logger.info('Starting attachment processing', { 
     totalAttachments: attachments.length,
@@ -770,38 +829,102 @@ async function processAttachments(
     });
 
     let uploadData: any = null;
+    let fileBuffer: Uint8Array | undefined;
+    
     try {
       validateFile(file);
       
-      // Extract EXIF location from original file BEFORE processing
-      const coordinatesString = await exifrExtractLocationFromExif(file);
-      let streetAddress: string | null = null;
+      // Get or create shared buffer for this file
+      if (fileBuffers && fileBuffers.has(file.name)) {
+        fileBuffer = fileBuffers.get(file.name);
+        logger.debug('Reusing existing buffer for file', { filename: file.name });
+      }
       
-      // If we have coordinates, try to get street address
-      if (coordinatesString) {
-        const coords = coordinatesString.split(', ');
-        if (coords.length === 2) {
-          const lat = parseFloat(coords[0]);
-          const lon = parseFloat(coords[1]);
-          
-          if (!isNaN(lat) && !isNaN(lon)) {
-            try {
-              const geocoder = reverseGeocoder || reverseGeocode;
-              streetAddress = await geocoder(lat, lon);
-            } catch (error) {
-              const errorMessage = error instanceof Error ? error.message : String(error);
-              logger.warn('Reverse geocoding failed, using coordinates only', { errorMessage });
+      let coordinatesString: string | null = null;
+      let streetAddress: string | null = null;
+      let originalUploadData: any = null;
+      
+      // Only extract GPS for image files (videos don't contain GPS data)
+      if (!file.type.includes('video')) {
+        // Step 1: Upload original file to originals/ folder for GPS extraction
+        const originalFilename = generateOriginalFilename(file.name);
+        originalUploadData = await uploadFileToStorage(supabase, file, originalFilename);
+        
+        logger.debug('Original file uploaded', {
+          originalFilename: file.name,
+          originalPath: originalUploadData.path
+        });
+        
+        // Step 2: Extract GPS coordinates from original file using extract-gps function
+        coordinatesString = await callExtractGpsFunction(originalUploadData.path);
+        
+        // If we have coordinates, try to get street address
+        if (coordinatesString) {
+          const coords = coordinatesString.split(', ');
+          if (coords.length === 2) {
+            const lat = parseFloat(coords[0]);
+            const lon = parseFloat(coords[1]);
+            
+            if (!isNaN(lat) && !isNaN(lon)) {
+              try {
+                const geocoder = reverseGeocoder || reverseGeocode;
+                streetAddress = await geocoder(lat, lon);
+              } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                logger.warn('Reverse geocoding failed, using coordinates only', { errorMessage });
+              }
             }
           }
         }
+      } else {
+        logger.debug('Skipping GPS extraction for video file', { filename: file.name });
       }
       
-      // Process file for vision (may strip EXIF)
-      const processedFile = await processFileForVision(file, videoFrameExtractor);
+      // Step 3: Process file for vision (may strip EXIF) - reuse buffer if available
+      const processedFile = await processFileForVision(file, videoFrameExtractor, fileBuffer);
       const filename = generateUniqueFilename(processedFile.name);
       
-      // Upload file with separated GPS and location data
-      uploadData = await uploadFileAndCreateRecord(supabase, processedFile, filename, senderEmail, undefined, coordinatesString, streetAddress);
+      // Step 4: Upload processed file to uploads/ folder
+      uploadData = await uploadFileToStorage(supabase, processedFile, filename);
+      
+      logger.debug('Processed file uploaded', {
+        originalFilename: file.name,
+        processedPath: uploadData.path,
+        hasGpsData: !!coordinatesString
+      });
+      
+      // Step 5: Create record in vehicle-photos table with GPS and location data
+      const { error: insertError } = await supabase
+        .from("vehicle-photos")
+        .upsert({
+          name: uploadData.path,
+          submitted_by: senderEmail,
+          status: 'unprocessed',
+          gps: coordinatesString,
+          location: streetAddress
+        }, {
+          onConflict: 'name'
+        });
+        
+      if (insertError) {
+        logger.error('Error inserting vehicle-photos record', { insertError });
+        throw new Error(`Failed to insert vehicle-photos record: ${insertError.message || JSON.stringify(insertError)}`);
+      }
+      
+      // Optional: Clean up original file after successful processing (only for image files)
+      if (originalUploadData) {
+        try {
+          await supabase.storage
+            .from("gh-vehicle-photos")
+            .remove([originalUploadData.path]);
+          logger.debug('Original file cleaned up', { originalPath: originalUploadData.path });
+        } catch (cleanupError) {
+          logger.warn('Failed to clean up original file', { 
+            originalPath: originalUploadData.path,
+            error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
+          });
+        }
+      }
       uploadedPaths.push(uploadData.path);
       
       logger.info('File uploaded successfully', {
@@ -821,10 +944,17 @@ async function processAttachments(
       const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
       logger.info(`${errorMessage}`);
       logger.logError(error instanceof Error ? error : new Error(String(error)), 'Failed to process file', { 
-        filename: file.name,
-        uploadPath: uploadData?.path
+        filename: file.name
       });
       errors.push(`${file.name}: ${errorMessage}`);
+    } finally {
+      // Explicit memory cleanup after each file processing
+      if (fileBuffers && fileBuffers.has(file.name)) {
+        fileBuffers.delete(file.name);
+        logger.debug('Cleaned up buffer for file', { filename: file.name });
+      }
+      
+
     }
   }
 
@@ -837,6 +967,12 @@ async function processAttachments(
       status: 400, 
       headers: { "Content-Type": "application/json" } 
     });
+  }
+
+  // Final cleanup of any remaining buffers
+  if (fileBuffers) {
+    fileBuffers.clear();
+    logger.debug('Cleared all remaining file buffers');
   }
 
   logger.info('Attachment processing completed', {
@@ -942,8 +1078,11 @@ export const handler = async (
       attachmentCount: attachments.length
     });
     
-    // Use content-based signature verification instead of FormData body
-    const isValid = await verifyContentBasedSignature(attachments, senderEmail, timestamp, signature, webhookSecret);
+    // Create shared buffer map to reduce memory usage
+    const fileBuffers = new Map<string, Uint8Array>();
+    
+    // Use content-based signature verification with shared buffers
+    const isValid = await verifyContentBasedSignature(attachments, senderEmail, timestamp, signature, webhookSecret, fileBuffers);
     
     if (!isValid) {
       logger.warn('Invalid signature or timestamp', {
@@ -961,7 +1100,7 @@ export const handler = async (
       senderEmail, 
       attachmentCount: attachments.length 
     });
-    return await processAttachments(attachments, senderEmail, supabase, pgmq_public, enqueue, videoFrameExtractor, reverseGeocoder);
+    return await processAttachments(attachments, senderEmail, supabase, pgmq_public, enqueue, videoFrameExtractor, reverseGeocoder, fileBuffers);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error('Handler error', { errorMessage, stack: error instanceof Error ? error.stack : undefined });
