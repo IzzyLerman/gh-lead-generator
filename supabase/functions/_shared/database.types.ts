@@ -348,6 +348,33 @@ export type Database = {
           },
         ]
       }
+      zohomail_auth: {
+        Row: {
+          access_token: string
+          created_at: string | null
+          id: number
+          refresh_token: string
+          updated_at: string | null
+          valid_until: string
+        }
+        Insert: {
+          access_token: string
+          created_at?: string | null
+          id?: number
+          refresh_token: string
+          updated_at?: string | null
+          valid_until: string
+        }
+        Update: {
+          access_token?: string
+          created_at?: string | null
+          id?: number
+          refresh_token?: string
+          updated_at?: string | null
+          valid_until?: string
+        }
+        Relationships: []
+      }
       zoominfo_auth: {
         Row: {
           created_at: string | null

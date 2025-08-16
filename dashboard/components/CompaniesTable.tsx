@@ -21,7 +21,7 @@ import { Pagination } from '@/components/ui/pagination'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { createLogger } from '@/utils/logger'
 
-const PAGE_SIZE = 5
+const PAGE_SIZE = 8
 
 interface TruncatedTextProps {
   text: string | string[] | null

@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ThemeToggle } from '@/components/ui/theme-toggle'
 
 export default async function Dashboard() {
-  const paginatedCompanies = await fetchCompaniesWithContactsAndPhotos({ page: 1, pageSize: 5 })
+  const paginatedCompanies = await fetchCompaniesWithContactsAndPhotos({ page: 1, pageSize: 8 })
 
   return (
     <div className="flex-1 bg-gray-50 dark:bg-background">
