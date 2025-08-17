@@ -21,7 +21,7 @@ import { Pagination } from '@/components/ui/pagination'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { createLogger } from '@/utils/logger'
 
-const PAGE_SIZE = 8
+const PAGE_SIZE = 6
 
 interface TruncatedTextProps {
   text: string | string[] | null
@@ -66,22 +66,25 @@ interface MessageModalProps {
   isOpen: boolean
   onClose: () => void
   onMarkAsSent: (contactId: string) => void
-  onUpdateContact: (contactId: string, updates: Partial<Pick<Tables<'contacts'>, 'email_subject' | 'email_body' | 'text_message'>>) => void
+  onUpdateContact: (contactId: string, updates: Partial<Pick<Tables<'contacts'>, 'email' | 'email_subject' | 'email_body' | 'text_message'>>) => void
   onSendEmail: (contactId: string) => void
 }
 
 function MessageModal({ contact, company, isOpen, onClose, onMarkAsSent, onUpdateContact, onSendEmail }: MessageModalProps) {
+  const [editingEmail, setEditingEmail] = useState(false)
   const [editingEmailSubject, setEditingEmailSubject] = useState(false)
   const [editingEmailMessage, setEditingEmailMessage] = useState(false)
   const [editingTextMessage, setEditingTextMessage] = useState(false)
   const [showConfirmation, setShowConfirmation] = useState(false)
   
+  const [emailValue, setEmailValue] = useState('')
   const [emailSubjectValue, setEmailSubjectValue] = useState('')
   const [emailMessageValue, setEmailMessageValue] = useState('')
   const [textMessageValue, setTextMessageValue] = useState('')
 
   useEffect(() => {
     if (contact) {
+      setEmailValue(contact.email || '')
       setEmailSubjectValue(contact.email_subject || '')
       setEmailMessageValue(contact.email_body || '')
       setTextMessageValue(contact.text_message || '')
@@ -96,6 +99,16 @@ function MessageModal({ contact, company, isOpen, onClose, onMarkAsSent, onUpdat
   const formatFullName = (firstName: string | null, middleName: string | null, lastName: string | null) => {
     const nameParts = [firstName, middleName, lastName].filter(part => part && part.trim())
     return nameParts.length > 0 ? nameParts.join(' ') : 'Unnamed Contact'
+  }
+
+  const handleUpdateEmail = () => {
+    onUpdateContact(contact.id, { email: emailValue })
+    setEditingEmail(false)
+  }
+
+  const handleCancelEmail = () => {
+    setEmailValue(contact.email || '')
+    setEditingEmail(false)
   }
 
   const handleUpdateEmailSubject = () => {
@@ -148,17 +161,60 @@ function MessageModal({ contact, company, isOpen, onClose, onMarkAsSent, onUpdat
           {/* Contact Info */}
           <div className="space-y-2">
             <h4 className="font-medium">Contact Information</h4>
-            <div className="space-y-1 text-sm">
-              {contact.email && (
-                <div className="flex items-center gap-1">
-                  <Mail className="h-3 w-3" />
-                  {contact.email}
+            <div className="space-y-3 text-sm">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-1">
+                    <Mail className="h-3 w-3" />
+                    <span className="text-sm font-medium">Email:</span>
+                  </div>
+                  {!editingEmail && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setEditingEmail(true)}
+                    >
+                      <Edit className="h-3 w-3 mr-1" />
+                      Edit
+                    </Button>
+                  )}
                 </div>
-              )}
+                {editingEmail ? (
+                  <div className="space-y-2">
+                    <Textarea
+                      value={emailValue}
+                      onChange={(e) => setEmailValue(e.target.value)}
+                      className="text-sm"
+                      rows={1}
+                      placeholder="Enter email address"
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        onClick={handleUpdateEmail}
+                      >
+                        Update
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleCancelEmail}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-sm bg-muted/30 p-2 rounded border">
+                    {contact.email || 'No email'}
+                  </div>
+                )}
+              </div>
               {contact.phone && (
                 <div className="flex items-center gap-1">
                   <Phone className="h-3 w-3" />
-                  {contact.phone}
+                  <span className="text-sm font-medium">Phone:</span>
+                  <span>{contact.phone}</span>
                 </div>
               )}
             </div>
@@ -811,6 +867,17 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
         console.log('Email sent successfully')
         await updateContactStatus(contactId, 'sent')
         closeMessageModal()
+      } else if (response.status === 401) {
+        try {
+          const errorData = await response.json()
+          const verificationStatus = errorData.verification_status || 'Unknown verification status'
+          console.error('Email verification failed:', errorData)
+          alert(`Email verification failed: ${verificationStatus}.\n\nThe email address may be invalid, expired, or undeliverable. Please verify the email address and try again.`)
+        } catch (parseError) {
+          const errorText = await response.text()
+          console.error('Failed to parse verification error:', parseError)
+          alert(`Email verification failed: ${errorText}`)
+        }
       } else {
         const errorText = await response.text()
         console.error('Failed to send email:', errorText)
@@ -823,7 +890,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
     }
   }
 
-  const handleUpdateContact = async (contactId: string, updates: Partial<Pick<Tables<'contacts'>, 'email_subject' | 'email_body' | 'text_message'>>) => {
+  const handleUpdateContact = async (contactId: string, updates: Partial<Pick<Tables<'contacts'>, 'email' | 'email_subject' | 'email_body' | 'text_message'>>) => {
     try {
       console.log('Update contact - contactId:', contactId, 'updates:', updates)
       

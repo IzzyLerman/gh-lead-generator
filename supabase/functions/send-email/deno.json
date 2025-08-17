@@ -1,3 +1,5 @@
 {
-  "imports": {}
+  "imports": {
+    "verifalia": "https://esm.sh/verifalia@4.1.0"
+  }
 }

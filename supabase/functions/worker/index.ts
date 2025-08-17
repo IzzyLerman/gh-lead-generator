@@ -657,15 +657,40 @@ async function processMessages(companies: CompanyUpsertData[], messages: QueueMe
           
         await archiveMessage(pgmq_public, message);
       } else {
-      logger.info('Successfully upserted company', { companyName: company.name });
-      
       // Extract company_id and insert flag from the new return format
-      const upsertResult = result.data as unknown as UpsertResult;
+      const upsertResult = result.data as unknown as UpsertResult & { skipped?: boolean; reason?: string };
       const companyId = upsertResult.company_id;
       let wasInsert = upsertResult.was_insert;
       
-      // Update vehicle_photos table with company_id and mark as processed
-      const pathname = message.message.image_path;
+      // Check if company was skipped due to 'sent' status
+      if (upsertResult.skipped) {
+        logger.info('Company processing skipped', { 
+          companyName: company.name, 
+          reason: upsertResult.reason 
+        });
+        
+        // Update vehicle_photos table with company_id and mark as processed
+        const { error: updateError } = await supabase
+          .from('vehicle-photos')
+          .update({ 
+            company_id: companyId,
+            status: 'processed'
+          })
+          .eq('name', pathname);
+        
+        if (updateError) {
+          logger.logError(updateError, 'Error updating vehicle_photos with company_id', {
+            companyId,
+            imagePath: pathname
+          });
+          throw updateError;
+        }
+        
+        await deleteMessage(pgmq_public, message);
+        return;
+      }
+      
+      logger.info('Successfully upserted company', { companyName: company.name });
       const { error: updateError } = await supabase
         .from('vehicle-photos')
         .update({ 

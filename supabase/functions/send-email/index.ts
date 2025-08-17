@@ -3,6 +3,7 @@ import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-
 import { Database } from './../_shared/database.types.ts';
 import { createLogger } from './../_shared/logger.ts';
 import { getAccessToken } from './../_shared/zohomail-auth.ts';
+import { VerifaliaRestClient } from 'verifalia';
 
 function getEnvVar(key: string): string {
   const value = Deno.env.get(key);
@@ -24,6 +25,7 @@ interface ContactWithCompany {
   email: string;
   email_subject: string | null;
   email_body: string | null;
+  verifalia_email_valid: string | null;
 }
 
 interface VehiclePhoto {
@@ -52,7 +54,7 @@ async function getContactById(supabase: SupabaseClient<Database>, contactId: str
   
   const { data: contactData, error: contactError } = await supabase
     .from('contacts')
-    .select('id, company_id, name, email, email_subject, email_body')
+    .select('id, company_id, name, email, email_subject, email_body, verifalia_email_valid')
     .eq('id', contactId)
     .single();
 
@@ -81,7 +83,8 @@ async function getContactById(supabase: SupabaseClient<Database>, contactId: str
     name: contactData.name,
     email: contactData.email,
     email_subject: contactData.email_subject,
-    email_body: contactData.email_body
+    email_body: contactData.email_body,
+    verifalia_email_valid: contactData.verifalia_email_valid
   };
 }
 
@@ -181,6 +184,77 @@ async function uploadAttachments(contactId: string, imageBlob: Blob, filename: s
 
 function convertPlaintextToHtml(plaintext: string): string {
   return `<p>${plaintext.replace(/\r?\n/g, '<br>')}</p>`;
+}
+
+async function verifyEmail(supabase: SupabaseClient<Database>, contact: ContactWithCompany): Promise<{ isValid: boolean; status: string }> {
+  logger.debug('Verifying email address', { email: contact.email, contactId: contact.id });
+  
+  // Check if we already have a cached verification result
+  if (contact.verifalia_email_valid) {
+    const isValid = contact.verifalia_email_valid === 'true';
+    const status = isValid ? 'Deliverable (cached)' : 'Not Deliverable (cached)';
+    logger.info('Using cached email verification result', { 
+      email: contact.email, 
+      contactId: contact.id,
+      isValid,
+      status
+    });
+    return { isValid, status };
+  }
+  
+  const username = getEnvVar('VERIFALIA_USERNAME');
+  const password = getEnvVar('VERIFALIA_PASSWORD');
+  
+  const verifalia = new VerifaliaRestClient({
+    username: username,
+    password: password
+  });
+  
+  try {
+    // Submit the email for verification (default behavior should wait for completion)
+    const result = await verifalia
+      .emailValidations
+      .submit(contact.email);
+    
+    logger.debug('Verifalia API response', { 
+      email: contact.email, 
+      contactId: contact.id, 
+      status: result.overview?.status,
+      entriesCount: result.entries?.length
+    });
+    
+    if (!result || !result.entries || result.entries.length === 0) {
+      throw new Error(`No verification result returned from Verifalia. Status: ${result?.overview?.status || 'Unknown'}`);
+    }
+    
+    const entry = result.entries[0];
+    if (!entry || !entry.classification) {
+      throw new Error('Invalid verification result structure from Verifalia');
+    }
+    
+    const status = `${entry.classification} (${entry.status || 'Unknown'})`;
+    const isValid = entry.classification === 'Deliverable';
+    
+    // Cache the verification result in the database
+    await supabase
+      .from('contacts')
+      .update({ verifalia_email_valid: isValid ? 'true' : 'false' })
+      .eq('id', contact.id);
+    
+    logger.info('Email verification completed and cached', { 
+      email: contact.email, 
+      contactId: contact.id,
+      status, 
+      isValid,
+      classification: entry.classification,
+      entryStatus: entry.status || 'Unknown'
+    });
+    
+    return { isValid, status };
+  } catch (error) {
+    logger.error('Failed to verify email with Verifalia', { email: contact.email, contactId: contact.id, error: error.message });
+    throw new Error(`Email verification failed: ${error.message}`);
+  }
 }
 
 async function sendEmail(contact: ContactWithCompany, attachments: AttachmentMetadata[]): Promise<void> {
@@ -356,6 +430,24 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({ error: 'Contact not found' }),
         { status: 404, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
+
+    // Verify email address before proceeding
+    const emailVerification = await verifyEmail(supabase, contact);
+    if (!emailVerification.isValid) {
+      logger.warn('Email verification failed, aborting send', { 
+        contactId: contact.id, 
+        email: contact.email, 
+        verificationStatus: emailVerification.status 
+      });
+      return new Response(
+        JSON.stringify({ 
+          error: 'Email verification failed',
+          message: `Email address is not deliverable: ${emailVerification.status}`,
+          verification_status: emailVerification.status
+        }),
+        { status: 401, headers: { "Content-Type": "application/json", ...corsHeaders } }
       );
     }
 
