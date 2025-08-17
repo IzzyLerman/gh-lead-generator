@@ -66,7 +66,7 @@ interface MessageModalProps {
   isOpen: boolean
   onClose: () => void
   onMarkAsSent: (contactId: string) => void
-  onUpdateContact: (contactId: string, updates: Partial<Pick<Tables<'contacts'>, 'email' | 'email_subject' | 'email_body' | 'text_message'>>) => void
+  onUpdateContact: (contactId: string, updates: Partial<Pick<Tables<'contacts'>, 'email' | 'email_subject' | 'email_body' | 'text_message' | 'verifalia_email_valid'>>) => void
   onSendEmail: (contactId: string) => void
 }
 
@@ -890,9 +890,14 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
     }
   }
 
-  const handleUpdateContact = async (contactId: string, updates: Partial<Pick<Tables<'contacts'>, 'email' | 'email_subject' | 'email_body' | 'text_message'>>) => {
+  const handleUpdateContact = async (contactId: string, updates: Partial<Pick<Tables<'contacts'>, 'email' | 'email_subject' | 'email_body' | 'text_message' | 'verifalia_email_valid'>>) => {
     try {
       console.log('Update contact - contactId:', contactId, 'updates:', updates)
+      
+      // If email is being updated, clear the verifalia_email_valid field
+      const finalUpdates = updates.email !== undefined 
+        ? { ...updates, verifalia_email_valid: null }
+        : updates
       
       // Optimistically update the UI first
       setPaginatedData(prevData => ({
@@ -900,19 +905,19 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
         data: prevData.data.map(company => ({
           ...company,
           contacts: company.contacts.map(contact =>
-            contact.id === contactId ? { ...contact, ...updates } : contact
+            contact.id === contactId ? { ...contact, ...finalUpdates } : contact
           )
         }))
       }))
 
       // Also update selectedContact if it matches
       if (selectedContact?.id === contactId) {
-        setSelectedContact(prev => prev ? { ...prev, ...updates } : null)
+        setSelectedContact(prev => prev ? { ...prev, ...finalUpdates } : null)
       }
       
       const { error, data } = await supabase
         .from('contacts')
-        .update(updates)
+        .update(finalUpdates)
         .eq('id', contactId)
         .select()
       

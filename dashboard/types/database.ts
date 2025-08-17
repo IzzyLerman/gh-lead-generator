@@ -7,119 +7,6 @@ export type Json =
   | Json[]
 
 export type Database = {
-  pgmq_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      archive: {
-        Args: { queue_name: string; message_id: number }
-        Returns: boolean
-      }
-      delete: {
-        Args: { queue_name: string; message_id: number }
-        Returns: boolean
-      }
-      pop: {
-        Args: { queue_name: string }
-        Returns: unknown[]
-      }
-      read: {
-        Args: { queue_name: string; sleep_seconds: number; n: number }
-        Returns: unknown[]
-      }
-      send: {
-        Args: { queue_name: string; message: Json; sleep_seconds?: number }
-        Returns: number[]
-      }
-      send_batch: {
-        Args: { queue_name: string; messages: Json[]; sleep_seconds?: number }
-        Returns: number[]
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
-  private: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      clear_test_force_company: {
-        Args: Record<PropertyKey, never>
-        Returns: undefined
-      }
-      export_companies_csv: {
-        Args: Record<PropertyKey, never>
-        Returns: string
-      }
-      export_contacts_csv: {
-        Args: Record<PropertyKey, never>
-        Returns: string
-      }
-      get_test_force_company: {
-        Args: Record<PropertyKey, never>
-        Returns: number
-      }
-      normalize_company_name: {
-        Args: { name_input: string }
-        Returns: string
-      }
-      normalize_email: {
-        Args: { email_input: string }
-        Returns: string
-      }
-      normalize_phone: {
-        Args: { phone_input: string }
-        Returns: string
-      }
-      normalize_website: {
-        Args: { website_input: string }
-        Returns: string
-      }
-      set_test_force_company: {
-        Args: { company_index: number }
-        Returns: undefined
-      }
-      upsert_company: {
-        Args:
-          | {
-              p_name: string
-              p_email: string
-              p_phone: string
-              p_industry: string[]
-              p_city: string
-              p_state: string
-            }
-          | {
-              p_name: string
-              p_email: string
-              p_phone: string
-              p_industry: string[]
-              p_city: string
-              p_state: string
-              p_website: string
-            }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       companies: {
@@ -202,6 +89,7 @@ export type Database = {
           text_message: string | null
           title: string | null
           updated_at: string | null
+          verifalia_email_valid: string | null
           zoominfo_id: number | null
         }
         Insert: {
@@ -220,6 +108,7 @@ export type Database = {
           text_message?: string | null
           title?: string | null
           updated_at?: string | null
+          verifalia_email_valid?: string | null
           zoominfo_id?: number | null
         }
         Update: {
@@ -238,6 +127,7 @@ export type Database = {
           text_message?: string | null
           title?: string | null
           updated_at?: string | null
+          verifalia_email_valid?: string | null
           zoominfo_id?: number | null
         }
         Relationships: [
@@ -347,6 +237,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      zohomail_auth: {
+        Row: {
+          access_token: string
+          created_at: string | null
+          id: number
+          refresh_token: string
+          updated_at: string | null
+          valid_until: string
+        }
+        Insert: {
+          access_token: string
+          created_at?: string | null
+          id?: number
+          refresh_token: string
+          updated_at?: string | null
+          valid_until: string
+        }
+        Update: {
+          access_token?: string
+          created_at?: string | null
+          id?: number
+          refresh_token?: string
+          updated_at?: string | null
+          valid_until?: string
+        }
+        Relationships: []
       }
       zoominfo_auth: {
         Row: {
@@ -494,12 +411,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  pgmq_public: {
-    Enums: {},
-  },
-  private: {
-    Enums: {},
-  },
   public: {
     Enums: {},
   },
