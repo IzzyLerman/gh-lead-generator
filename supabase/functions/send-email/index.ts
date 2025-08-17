@@ -179,7 +179,92 @@ async function uploadAttachments(contactId: string, imageBlob: Blob, filename: s
   }];
 }
 
+function convertPlaintextToHtml(plaintext: string): string {
+  return `<p>${plaintext.replace(/\r?\n/g, '<br>')}</p>`;
+}
+
 async function sendEmail(contact: ContactWithCompany, attachments: AttachmentMetadata[]): Promise<void> {
+
+  const emailSignatureHtml = `
+<div>
+    Best,
+    <br>
+</div>
+<div>
+    <br>
+</div>
+<div>
+    <b>
+        Izzy Lerman
+    </b>
+    <br>
+</div>
+<div>
+    <i>
+        Account Executive
+    </i>
+    <br>
+</div>
+<div>
+    <b>
+        Good Hope Advisors | M&amp;A Advising for Contractors
+    </b>
+    <br>
+</div>
+<div>
+    516.639.0970
+    <br>
+</div>
+<div>
+    <span class="colour" style="color:rgb(70, 120, 134)">
+        <span class="font" style="font-family:Aptos, sans-serif">
+            <span class="size" style="font-size:10pt">
+                <u>
+                    <a target="_blank" href="http://www.goodhopeadvisors.com/" id="m_-7158102627353948899OWA02eb39b2-308e-6cdc-89b7-66c7eb773cc1" title="http://www.goodhopeadvisors.com" style="color:rgb(70, 120, 134); margin:0px">
+                        www.goodhopeadvisors.com
+                    </a>
+                </u>
+            </span>
+        </span>
+    </span>
+    <span class="colour" style="color:rgb(36, 36, 36)">
+        <span class="font" style="font-family:Aptos, sans-serif">
+            <span class="size" style="font-size:10pt">
+                &nbsp;
+            </span>
+        </span>
+    </span>
+    <br>
+</div>
+<div>
+    <br>
+</div>
+<p style="text-align:left; text-indent:0px; margin:0in 0in 0in 0px">
+    <span class="highlight" style="background-color: rgb(255, 255, 255); text-align: left; text-indent: 0px; margin: 0in 0in 0in 0px;">
+        <span class="highlight" style="background-color:rgb(255, 255, 255)">
+            <span class="colour" style="color:rgb(0, 0, 0)">
+                <span class="font" style="font-family:&quot;Century Gothic&quot;, sans-serif">
+                    <span class="size" style="font-size:13.3333px">
+                        <a target="_blank" href="https://www.axial.net/forum/top-25-lower-middle-market-investment-banks-q1-2025/?utm_source=hs_email&amp;utm_medium=email&amp;_hsenc=p2ANqtz-_js5unEraR1rolGnuZNJ4GsBGBR-Ppa35SNxmwk1_S_nuMT6IjnpcaAmRnwi6N48hAtmbW" id="m_-7158102627353948899LPlnk749822" style="margin:0px; background-color:rgb(255, 255, 255); text-align:left">
+                            Good Hope named Top 25 M&amp;A Advisor by Axial
+                        </a>
+                    </span>
+                </span>
+            </span>
+        </span>
+        <br>
+    </span>
+</p>
+<div style="text-align:left; text-indent:0px; background-color:rgb(255, 255, 255); margin:0in 0in 0in 0px; font-family:&quot;Century Gothic&quot;, sans-serif; font-size:13.3333px; color:rgb(0, 0, 0)">
+    <span class="highlight" style="background-color:rgb(255, 255, 255)">
+        <a target="_blank" href="https://www.axial.net/forum/the-top-50-lower-middle-market-industrials-investors-ma-advisors-2025/" id="m_-7158102627353948899OWAc413e24e-d9fa-c524-90be-55abcbeea635" title="https://www.axial.net/forum/the-top-50-lower-middle-market-industrials-investors-ma-advisors-2025/" style="background-color:rgb(255, 255, 255)">
+            Good Hope Top 50 Industrials M&amp;A Advisor
+        </a>
+    </span>
+    <br>
+</div>
+`
+
   logger.debug('Sending email via ZohoMail', { contactId: contact.id, recipientEmail: contact.email });
   
   const accessToken = await getAccessToken();
@@ -190,11 +275,14 @@ async function sendEmail(contact: ContactWithCompany, attachments: AttachmentMet
     throw new Error('Email subject and body are required');
   }
   
+  const htmlBody = convertPlaintextToHtml(contact.email_body);
+  const emailContent = htmlBody + emailSignatureHtml;
+  
   const emailData = {
     fromAddress: fromAddress,
     toAddress: contact.email,
     subject: contact.email_subject,
-    content: contact.email_body,
+    content: emailContent,
     attachments: attachments
   };
   
@@ -230,11 +318,21 @@ async function sendEmail(contact: ContactWithCompany, attachments: AttachmentMet
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  };
+
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+
   try {
     if (req.method !== 'POST') {
       return new Response(
         JSON.stringify({ error: 'Method not allowed' }),
-        { status: 405, headers: { "Content-Type": "application/json" } }
+        { status: 405, headers: { "Content-Type": "application/json", ...corsHeaders } }
       );
     }
 
@@ -243,7 +341,7 @@ Deno.serve(async (req) => {
     if (!body.contact_id) {
       return new Response(
         JSON.stringify({ error: 'contact_id is required' }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
+        { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
       );
     }
 
@@ -257,7 +355,7 @@ Deno.serve(async (req) => {
     if (!contact) {
       return new Response(
         JSON.stringify({ error: 'Contact not found' }),
-        { status: 404, headers: { "Content-Type": "application/json" } }
+        { status: 404, headers: { "Content-Type": "application/json", ...corsHeaders } }
       );
     }
 
@@ -265,7 +363,7 @@ Deno.serve(async (req) => {
     if (vehiclePhotos.length === 0) {
       return new Response(
         JSON.stringify({ error: 'No vehicle photos found for company' }),
-        { status: 404, headers: { "Content-Type": "application/json" } }
+        { status: 404, headers: { "Content-Type": "application/json", ...corsHeaders } }
       );
     }
 
@@ -292,7 +390,7 @@ Deno.serve(async (req) => {
     if (uploadedAttachments.length === 0) {
       return new Response(
         JSON.stringify({ error: 'Failed to upload any attachments' }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
+        { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
       );
     }
 
@@ -314,7 +412,7 @@ Deno.serve(async (req) => {
         email_sent: true,
         attachments_uploaded: uploadedAttachments.length
       }),
-      { headers: { "Content-Type": "application/json" } }
+      { headers: { "Content-Type": "application/json", ...corsHeaders } }
     );
 
   } catch (error) {
@@ -325,7 +423,7 @@ Deno.serve(async (req) => {
         error: 'Internal server error',
         message: error.message 
       }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
+      { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
     );
   }
 });

@@ -174,6 +174,80 @@ function extractStreetName(location: string): string {
   return firstPart;
 }
 
+async function generateIndustryPrefix(
+  contact: ContactInfo,
+  apiKey: string,
+  supabaseUrl: string,
+  supabaseKey: string
+): Promise<string> {
+  const primaryIndustry = await getPrimaryIndustry(contact, supabaseUrl, supabaseKey);
+  
+  let industryToUse: string;
+  if (primaryIndustry && primaryIndustry !== 'business') {
+    industryToUse = primaryIndustry;
+  } else if (contact.industry && contact.industry.length > 0) {
+    industryToUse = contact.industry.join(', ');
+  } else {
+    industryToUse = 'business';
+  }
+
+  const prompt = `Convert this industry information into a clean, natural phrase for use in a business email: "${industryToUse}". 
+
+Return only a short, lowercase phrase that would fit naturally in this sentence: "we help owners in the ___ industry". 
+
+For example:
+- "Plumbing Contractors" → "plumbing"
+- "Landscaping Services" → "landscaping" 
+- "Construction General Contractors" → "construction"
+- "HVAC Contractors" → "HVAC"
+
+Just return the cleaned industry phrase, nothing else.`;
+
+  const response = await callClaudeAPI(prompt, apiKey);
+  return response.trim().toLowerCase();
+}
+
+function generateEmailSubject(streetName: string): string {
+  if (!streetName || streetName.trim() === '') {
+    return "Saw your truck last week";
+  }
+  return `Saw your truck on ${streetName}`;
+}
+
+function createStaticEmailTemplate(
+  contactName: string,
+  companyName: string,
+  industryPrefix: string,
+  streetName: string
+): string {
+  const locationText = streetName ? `on ${streetName}` : 'yesterday';
+  
+  return `Hi ${contactName},
+
+I spotted one of your trucks ${locationText} (pic attached). I'm Izzy with Good Hope Advisors, and we specialize in helping owners in the ${industryPrefix} industry achieve a successful exit. By running a competitive process and identifying value drivers that owners typically overlook, we raise clients' exit valuations by 20-40%. Would you be open to a brief call next week with our Managing Director Josh to discuss your long-term goals? Whether you're considering an exit soon or planning 3-5 years out, there are specific steps you can take now to maximize your eventual valuation.`;
+}
+
+function createStaticTextTemplate(
+  contactName: string,
+  companyName: string,
+  industryPrefix: string,
+  streetName: string
+): string {
+  const locationText = streetName ? `on ${streetName}` : 'yesterday';
+  
+  return `Hi ${contactName},
+Spotted your truck ${locationText} (pic attached).
+I'm Izzy with Good Hope Advisors. We help business owners in the ${industryPrefix} industry prepare for and execute a profitable sale.
+
+Even if an exit is years away, the planning often starts now. By creating a competitive process and identifying value drivers, we raise exit valuations by 20-40%.
+
+Are you open to a 15-minute call with our Managing Director Josh next week to discuss your long-term goals?
+
+Best, Izzy Lerman
+Account Executive, Good Hope Advisors
+goodhopeadvisors.com`;
+}
+
 async function callClaudeAPI(prompt: string, apiKey: string, apiUrl?: string): Promise<string> {
   const anthropic = new Anthropic({
     apiKey: apiKey,
@@ -238,16 +312,27 @@ export async function generateEmail(
   apiUrl?: string
 ): Promise<EmailResult> {
   const logger = createLogger('claude-api');
-  const prompt = await createEmailPrompt(contact, supabaseUrl, supabaseKey);
-  const response = await callClaudeAPI(prompt, apiKey);
   
-  logger.info('Raw LLM response for email generation', {
-    contactName: contact.firstName || contact.name,
-    responseLength: response.length,
-    rawResponse: response
+  const streetName = extractStreetName(contact.photoLocation);
+  const contactName = contact.firstName || contact.name || 'Business Owner';
+  const companyName = contact.companyName || 'Company Name';
+  
+  const industryPrefix = await generateIndustryPrefix(contact, apiKey, supabaseUrl, supabaseKey);
+  const emailSubject = generateEmailSubject(streetName);
+  const emailBody = createStaticEmailTemplate(contactName, companyName, industryPrefix, streetName);
+  
+  logger.info('Generated email with static template', {
+    contactName,
+    companyName,
+    industryPrefix,
+    streetName,
+    emailSubject
   });
   
-  return parseEmailResponse(response);
+  return {
+    subject: emailSubject,
+    body: emailBody
+  };
 }
 
 export async function generateTextMessage(
@@ -258,16 +343,22 @@ export async function generateTextMessage(
   apiUrl?: string
 ): Promise<string> {
   const logger = createLogger('claude-api');
-  const prompt = await createTextPrompt(contact, supabaseUrl, supabaseKey);
-  const response = await callClaudeAPI(prompt, apiKey);
   
-  logger.info('Raw LLM response for text message generation', {
-    contactName: contact.firstName || contact.name,
-    responseLength: response.length,
-    rawResponse: response
+  const streetName = extractStreetName(contact.photoLocation);
+  const contactName = contact.firstName || contact.name || 'Business Owner';
+  const companyName = contact.companyName || 'Company Name';
+  
+  const industryPrefix = await generateIndustryPrefix(contact, apiKey, supabaseUrl, supabaseKey);
+  const textMessage = createStaticTextTemplate(contactName, companyName, industryPrefix, streetName);
+  
+  logger.info('Generated text message with static template', {
+    contactName,
+    companyName,
+    industryPrefix,
+    streetName
   });
   
-  return response;
+  return textMessage;
 }
 
 export type { ContactInfo, EmailResult };

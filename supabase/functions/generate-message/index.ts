@@ -151,6 +151,8 @@ export async function createEmail(contact: EnrichedContact, overrides?: {
     generateEmail?: typeof generateEmail,
     generateTextMessage?: typeof generateTextMessage
 }): Promise<MessageResult> {
+
+
     const apiKey = getEnvVar('ANTHROPIC_API_KEY');
     
     const contactInfo: ContactInfo = {

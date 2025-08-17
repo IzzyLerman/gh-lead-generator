@@ -67,12 +67,14 @@ interface MessageModalProps {
   onClose: () => void
   onMarkAsSent: (contactId: string) => void
   onUpdateContact: (contactId: string, updates: Partial<Pick<Tables<'contacts'>, 'email_subject' | 'email_body' | 'text_message'>>) => void
+  onSendEmail: (contactId: string) => void
 }
 
-function MessageModal({ contact, company, isOpen, onClose, onMarkAsSent, onUpdateContact }: MessageModalProps) {
+function MessageModal({ contact, company, isOpen, onClose, onMarkAsSent, onUpdateContact, onSendEmail }: MessageModalProps) {
   const [editingEmailSubject, setEditingEmailSubject] = useState(false)
   const [editingEmailMessage, setEditingEmailMessage] = useState(false)
   const [editingTextMessage, setEditingTextMessage] = useState(false)
+  const [showConfirmation, setShowConfirmation] = useState(false)
   
   const [emailSubjectValue, setEmailSubjectValue] = useState('')
   const [emailMessageValue, setEmailMessageValue] = useState('')
@@ -315,13 +317,54 @@ function MessageModal({ contact, company, isOpen, onClose, onMarkAsSent, onUpdat
           {/* Actions */}
           {contact.status === 'ready_to_send' && (
             <div className="flex justify-end pt-4 border-t">
-              <Button
-                onClick={() => onMarkAsSent(contact.id)}
-                className="bg-green-600 hover:bg-green-700"
-              >
-                <Send className="h-4 w-4 mr-2" />
-                Mark as Sent
-              </Button>
+              {hasEmail ? (
+                <>
+                  <Button
+                    onClick={() => setShowConfirmation(true)}
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    <Send className="h-4 w-4 mr-2" />
+                    Send Email
+                  </Button>
+                  {showConfirmation && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                      <div className="bg-white dark:bg-card p-6 rounded-lg max-w-sm w-full mx-4">
+                        <h3 className="text-lg font-semibold mb-2">Confirm Email Send</h3>
+                        <p className="text-sm text-muted-foreground mb-4">
+                          Send email to {contact.email}?
+                        </p>
+                        <div className="flex gap-2 justify-end">
+                          <Button
+                            variant="outline"
+                            onClick={() => setShowConfirmation(false)}
+                            size="sm"
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            onClick={() => {
+                              setShowConfirmation(false)
+                              onSendEmail(contact.id)
+                            }}
+                            className="bg-blue-600 hover:bg-blue-700"
+                            size="sm"
+                          >
+                            Send
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <Button
+                  onClick={() => onMarkAsSent(contact.id)}
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  <Send className="h-4 w-4 mr-2" />
+                  Mark as Sent
+                </Button>
+              )}
             </div>
           )}
         </div>
@@ -741,6 +784,43 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
   const handleMarkAsSent = (contactId: string) => {
     updateContactStatus(contactId, 'sent')
     closeMessageModal()
+  }
+
+  const handleSendEmail = async (contactId: string) => {
+    try {
+      console.log('Sending email for contact:', contactId)
+      
+      const sendEmailUrl = process.env.NEXT_PUBLIC_SEND_EMAIL_URL
+      
+      if (!sendEmailUrl) {
+        throw new Error('Send email URL not configured')
+      }
+      
+      const response = await fetch(sendEmailUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`
+        },
+        body: JSON.stringify({
+          contact_id: contactId
+        })
+      })
+      
+      if (response.ok) {
+        console.log('Email sent successfully')
+        await updateContactStatus(contactId, 'sent')
+        closeMessageModal()
+      } else {
+        const errorText = await response.text()
+        console.error('Failed to send email:', errorText)
+        alert(`Failed to send email: ${errorText}`)
+      }
+    } catch (error) {
+      console.error('Error sending email:', error)
+      logger.logError(error as Error, 'Error sending email', { contactId })
+      alert(`Failed to send email: ${(error as Error)?.message || 'Unknown error'}`)
+    }
   }
 
   const handleUpdateContact = async (contactId: string, updates: Partial<Pick<Tables<'contacts'>, 'email_subject' | 'email_body' | 'text_message'>>) => {
@@ -1298,6 +1378,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
         onClose={closeMessageModal}
         onMarkAsSent={handleMarkAsSent}
         onUpdateContact={handleUpdateContact}
+        onSendEmail={handleSendEmail}
       />
     </div>
   )
