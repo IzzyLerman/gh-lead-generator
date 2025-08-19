@@ -15,6 +15,7 @@ const logger = createLogger('send-email');
 
 interface SendEmailRequest {
   contact_id: string;
+  skip_verification?: boolean;
 }
 
 interface ContactWithCompany {
@@ -94,8 +95,7 @@ async function getVehiclePhotosByCompanyId(supabase: SupabaseClient<Database>, c
   const { data, error } = await supabase
     .from('vehicle-photos')
     .select('id, company_id, name')
-    .eq('company_id', companyId)
-    .not('location', 'is', null);
+    .eq('company_id', companyId);
 
   if (error) {
     logger.error('Failed to fetch vehicle photos', { companyId, error: error.message });
@@ -186,8 +186,17 @@ function convertPlaintextToHtml(plaintext: string): string {
   return `<p>${plaintext.replace(/\r?\n/g, '<br>')}</p>`;
 }
 
-async function verifyEmail(supabase: SupabaseClient<Database>, contact: ContactWithCompany): Promise<{ isValid: boolean; status: string }> {
-  logger.debug('Verifying email address', { email: contact.email, contactId: contact.id });
+async function verifyEmail(supabase: SupabaseClient<Database>, contact: ContactWithCompany, skipVerification = false): Promise<{ isValid: boolean; status: string }> {
+  logger.debug('Verifying email address', { email: contact.email, contactId: contact.id, skipVerification });
+  
+  // If verification is being skipped, return as valid
+  if (skipVerification) {
+    logger.info('Skipping email verification as requested', { 
+      email: contact.email, 
+      contactId: contact.id 
+    });
+    return { isValid: true, status: 'Skipped verification' };
+  }
   
   // Check if we already have a cached verification result
   if (contact.verifalia_email_valid) {
@@ -214,7 +223,7 @@ async function verifyEmail(supabase: SupabaseClient<Database>, contact: ContactW
     // Submit the email for verification (default behavior should wait for completion)
     const result = await verifalia
       .emailValidations
-      .submit(contact.email);
+      .submit(contact.email)
     
     logger.debug('Verifalia API response', { 
       email: contact.email, 
@@ -433,19 +442,21 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Verify email address before proceeding
-    const emailVerification = await verifyEmail(supabase, contact);
+    // Verify email address before proceeding (unless skipping verification)
+    const emailVerification = await verifyEmail(supabase, contact, body.skip_verification);
     if (!emailVerification.isValid) {
       logger.warn('Email verification failed, aborting send', { 
         contactId: contact.id, 
         email: contact.email, 
-        verificationStatus: emailVerification.status 
+        verificationStatus: emailVerification.status,
+        skipVerification: body.skip_verification
       });
       return new Response(
         JSON.stringify({ 
           error: 'Email verification failed',
           message: `Email address is not deliverable: ${emailVerification.status}`,
-          verification_status: emailVerification.status
+          verification_status: emailVerification.status,
+          can_skip_verification: true
         }),
         { status: 401, headers: { "Content-Type": "application/json", ...corsHeaders } }
       );

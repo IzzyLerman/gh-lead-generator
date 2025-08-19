@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { ChevronRight, ChevronDown, Mail, Phone, MapPin, Building, Download, HelpCircle, Globe, Hash, Send, ArrowLeft, ArrowRight, Edit } from 'lucide-react'
+import { ChevronRight, ChevronDown, Mail, Phone, MapPin, Building, Download, HelpCircle, Globe, Hash, Send, ArrowLeft, ArrowRight, Edit, Loader2 } from 'lucide-react'
 import { CompanyWithContactsAndPhotos, PaginatedResult } from '@/lib/server-utils'
 import { fetchCompaniesWithContactsAndPhotos } from '@/lib/client-utils'
 import { VehiclePhotoGallery } from './VehiclePhotoGallery'
@@ -67,7 +67,7 @@ interface MessageModalProps {
   onClose: () => void
   onMarkAsSent: (contactId: string) => void
   onUpdateContact: (contactId: string, updates: Partial<Pick<Tables<'contacts'>, 'email' | 'email_subject' | 'email_body' | 'text_message' | 'verifalia_email_valid'>>) => void
-  onSendEmail: (contactId: string) => void
+  onSendEmail: (contactId: string) => Promise<void>
 }
 
 function MessageModal({ contact, company, isOpen, onClose, onMarkAsSent, onUpdateContact, onSendEmail }: MessageModalProps) {
@@ -76,6 +76,13 @@ function MessageModal({ contact, company, isOpen, onClose, onMarkAsSent, onUpdat
   const [editingEmailMessage, setEditingEmailMessage] = useState(false)
   const [editingTextMessage, setEditingTextMessage] = useState(false)
   const [showConfirmation, setShowConfirmation] = useState(false)
+  const [isSending, setIsSending] = useState(false)
+  const [showVerificationError, setShowVerificationError] = useState(false)
+  const [verificationErrorDetails, setVerificationErrorDetails] = useState<{
+    status: string;
+    message: string;
+    canSkip: boolean;
+  } | null>(null)
   
   const [emailValue, setEmailValue] = useState('')
   const [emailSubjectValue, setEmailSubjectValue] = useState('')
@@ -90,6 +97,15 @@ function MessageModal({ contact, company, isOpen, onClose, onMarkAsSent, onUpdat
       setTextMessageValue(contact.text_message || '')
     }
   }, [contact])
+
+  useEffect(() => {
+    if (!isOpen) {
+      setIsSending(false)
+      setShowConfirmation(false)
+      setShowVerificationError(false)
+      setVerificationErrorDetails(null)
+    }
+  }, [isOpen])
 
   if (!contact || !company) return null
 
@@ -139,6 +155,89 @@ function MessageModal({ contact, company, isOpen, onClose, onMarkAsSent, onUpdat
   const handleCancelTextMessage = () => {
     setTextMessageValue(contact.text_message || '')
     setEditingTextMessage(false)
+  }
+
+  const handleSendEmailInternal = async (skipVerification = false) => {
+    try {
+      console.log('Sending email for contact:', contact.id, 'skipVerification:', skipVerification)
+      
+      const sendEmailUrl = process.env.NEXT_PUBLIC_SEND_EMAIL_URL
+      
+      if (!sendEmailUrl) {
+        throw new Error('Send email URL not configured')
+      }
+      
+      const requestBody: { contact_id: string; skip_verification?: boolean } = {
+        contact_id: contact.id
+      }
+      
+      if (skipVerification) {
+        requestBody.skip_verification = true
+      }
+      
+      const response = await fetch(sendEmailUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`
+        },
+        body: JSON.stringify(requestBody)
+      })
+      
+      if (response.ok) {
+        console.log('Email sent successfully')
+        await onSendEmail(contact.id)
+        onClose()
+      } else if (response.status === 401) {
+        let errorData
+        try {
+          const responseText = await response.text()
+          errorData = JSON.parse(responseText)
+        } catch (parseError) {
+          console.error('Failed to parse verification error:', parseError)
+          setVerificationErrorDetails({
+            status: 'Parse Error',
+            message: `Email verification failed: Response parsing error`,
+            canSkip: false
+          })
+          setShowVerificationError(true)
+          return
+        }
+        
+        const verificationStatus = errorData.verification_status || 'Unknown verification status'
+        const canSkipVerification = errorData.can_skip_verification === true
+        
+        console.error('Email verification failed:', errorData)
+        
+        setVerificationErrorDetails({
+          status: verificationStatus,
+          message: errorData.message || 'Email verification failed',
+          canSkip: canSkipVerification
+        })
+        setShowVerificationError(true)
+      } else {
+        const errorText = await response.text()
+        console.error('Failed to send email:', errorText)
+        
+        setVerificationErrorDetails({
+          status: 'Send Error',
+          message: `Failed to send email: ${errorText}`,
+          canSkip: false
+        })
+        setShowVerificationError(true)
+      }
+    } catch (error) {
+      console.error('Error sending email:', error)
+      
+      setVerificationErrorDetails({
+        status: 'Network Error',
+        message: `Failed to send email: ${(error as Error)?.message || 'Unknown error'}`,
+        canSkip: false
+      })
+      setShowVerificationError(true)
+    } finally {
+      setIsSending(false)
+    }
   }
 
   return (
@@ -377,11 +476,23 @@ function MessageModal({ contact, company, isOpen, onClose, onMarkAsSent, onUpdat
                 <>
                   <Button
                     onClick={() => setShowConfirmation(true)}
+                    disabled={isSending}
                     className="bg-blue-600 hover:bg-blue-700"
                   >
-                    <Send className="h-4 w-4 mr-2" />
-                    Send Email
+                    {isSending ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Sending...
+                      </>
+                    ) : (
+                      <>
+                        <Send className="h-4 w-4 mr-2" />
+                        Send Email
+                      </>
+                    )}
                   </Button>
+                  
+                  {/* Email Confirmation Dialog */}
                   {showConfirmation && (
                     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
                       <div className="bg-white dark:bg-card p-6 rounded-lg max-w-sm w-full mx-4">
@@ -394,19 +505,83 @@ function MessageModal({ contact, company, isOpen, onClose, onMarkAsSent, onUpdat
                             variant="outline"
                             onClick={() => setShowConfirmation(false)}
                             size="sm"
+                            disabled={isSending}
                           >
                             Cancel
                           </Button>
                           <Button
-                            onClick={() => {
+                            onClick={async () => {
                               setShowConfirmation(false)
-                              onSendEmail(contact.id)
+                              setIsSending(true)
+                              await handleSendEmailInternal(false)
                             }}
                             className="bg-blue-600 hover:bg-blue-700"
                             size="sm"
+                            disabled={isSending}
                           >
-                            Send
+                            {isSending ? (
+                              <>
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                Sending...
+                              </>
+                            ) : (
+                              'Send'
+                            )}
                           </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Verification Error Dialog */}
+                  {showVerificationError && verificationErrorDetails && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                      <div className="bg-white dark:bg-card p-6 rounded-lg max-w-md w-full mx-4">
+                        <h3 className="text-lg font-semibold mb-2">Email Verification Failed</h3>
+                        <p className="text-sm text-muted-foreground mb-2">
+                          <strong>Status:</strong> {verificationErrorDetails.status}
+                        </p>
+                        <p className="text-sm text-muted-foreground mb-4">
+                          {verificationErrorDetails.message}
+                        </p>
+                        <p className="text-sm text-muted-foreground mb-4">
+                          The email address may be invalid, expired, or undeliverable. You can still send the email if you believe the address is correct.
+                        </p>
+                        <div className="flex gap-2 justify-end">
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setShowVerificationError(false)
+                              setVerificationErrorDetails(null)
+                              setIsSending(false)
+                            }}
+                            size="sm"
+                            disabled={isSending}
+                          >
+                            Cancel
+                          </Button>
+                          {verificationErrorDetails.canSkip && (
+                            <Button
+                              onClick={async () => {
+                                setShowVerificationError(false)
+                                setVerificationErrorDetails(null)
+                                setIsSending(true)
+                                await handleSendEmailInternal(true)
+                              }}
+                              className="bg-orange-600 hover:bg-orange-700"
+                              size="sm"
+                              disabled={isSending}
+                            >
+                              {isSending ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                  Sending...
+                                </>
+                              ) : (
+                                'Send Anyway'
+                              )}
+                            </Button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -843,51 +1018,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
   }
 
   const handleSendEmail = async (contactId: string) => {
-    try {
-      console.log('Sending email for contact:', contactId)
-      
-      const sendEmailUrl = process.env.NEXT_PUBLIC_SEND_EMAIL_URL
-      
-      if (!sendEmailUrl) {
-        throw new Error('Send email URL not configured')
-      }
-      
-      const response = await fetch(sendEmailUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`
-        },
-        body: JSON.stringify({
-          contact_id: contactId
-        })
-      })
-      
-      if (response.ok) {
-        console.log('Email sent successfully')
-        await updateContactStatus(contactId, 'sent')
-        closeMessageModal()
-      } else if (response.status === 401) {
-        try {
-          const errorData = await response.json()
-          const verificationStatus = errorData.verification_status || 'Unknown verification status'
-          console.error('Email verification failed:', errorData)
-          alert(`Email verification failed: ${verificationStatus}.\n\nThe email address may be invalid, expired, or undeliverable. Please verify the email address and try again.`)
-        } catch (parseError) {
-          const errorText = await response.text()
-          console.error('Failed to parse verification error:', parseError)
-          alert(`Email verification failed: ${errorText}`)
-        }
-      } else {
-        const errorText = await response.text()
-        console.error('Failed to send email:', errorText)
-        alert(`Failed to send email: ${errorText}`)
-      }
-    } catch (error) {
-      console.error('Error sending email:', error)
-      logger.logError(error as Error, 'Error sending email', { contactId })
-      alert(`Failed to send email: ${(error as Error)?.message || 'Unknown error'}`)
-    }
+    await updateContactStatus(contactId, 'sent')
   }
 
   const handleUpdateContact = async (contactId: string, updates: Partial<Pick<Tables<'contacts'>, 'email' | 'email_subject' | 'email_body' | 'text_message' | 'verifalia_email_valid'>>) => {
