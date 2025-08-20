@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { Input } from "@/components/ui/input"
 import { ChevronRight, ChevronDown, Mail, Phone, MapPin, Building, Download, HelpCircle, Globe, Hash, Send, ArrowLeft, ArrowRight, Edit, Loader2, Filter } from 'lucide-react'
 import { CompanyWithContactsAndPhotos, PaginatedResult } from '@/lib/server-utils'
 import { fetchCompaniesWithContactsAndPhotos, FilterState } from '@/lib/client-utils'
@@ -622,6 +623,9 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
   const [isMessageModalOpen, setIsMessageModalOpen] = useState(false)
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false)
   const [currentFilters, setCurrentFilters] = useState<FilterState>({ criteria: [] })
+  const [editingPrimaryIndustry, setEditingPrimaryIndustry] = useState<string | null>(null)
+  const [primaryIndustryValue, setPrimaryIndustryValue] = useState('')
+  const [isCustomIndustry, setIsCustomIndustry] = useState(false)
   const tableRef = React.useRef<HTMLDivElement>(null)
   const supabase = createClient()
   const logger = createLogger('companies-table')
@@ -1129,6 +1133,84 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
     { value: 'generating_message', label: 'Generating Message', className: 'bg-sky-100 text-sky-800' }
   ]
 
+  const industryOptions = [
+    'plumbing',
+    'HVAC',
+    'roofing and siding',
+    'landscaping',
+    'electrical contracting'
+  ]
+
+  const startEditingPrimaryIndustry = (companyId: string, currentIndustry: string | null) => {
+    setEditingPrimaryIndustry(companyId)
+    setPrimaryIndustryValue(currentIndustry || '')
+    
+    // Check if current industry is one of the predefined options
+    const isStandardIndustry = industryOptions.includes(currentIndustry || '')
+    // If no current industry (null or empty), default to dropdown mode
+    setIsCustomIndustry(Boolean(currentIndustry && !isStandardIndustry))
+  }
+
+  const cancelEditingPrimaryIndustry = () => {
+    setEditingPrimaryIndustry(null)
+    setPrimaryIndustryValue('')
+    setIsCustomIndustry(false)
+  }
+
+  const savePrimaryIndustry = async (companyId: string) => {
+    try {
+      await updatePrimaryIndustry(companyId, primaryIndustryValue)
+      cancelEditingPrimaryIndustry()
+    } catch {
+      // Error handling is done in updatePrimaryIndustry
+    }
+  }
+
+  const handleIndustryDropdownChange = (value: string) => {
+    if (value === 'other') {
+      setIsCustomIndustry(true)
+      setPrimaryIndustryValue('')
+    } else {
+      setIsCustomIndustry(false)
+      setPrimaryIndustryValue(value)
+    }
+  }
+
+  const updatePrimaryIndustry = async (companyId: string, newIndustry: string) => {
+    try {
+      console.log('Update primary industry - companyId:', companyId, 'newIndustry:', newIndustry)
+      
+      const { error, data } = await supabase
+        .from('companies')
+        .update({ primary_industry: newIndustry })
+        .eq('id', companyId)
+        .select()
+      
+      console.log('Supabase primary industry update result:', { error, data, dataLength: data?.length })
+      
+      if (error) {
+        console.error('Supabase error:', error)
+        logger.logError(error, 'Error updating primary industry', { companyId, newIndustry })
+        alert(`Failed to update primary industry: ${error.message}`)
+        throw error
+      } else if (data && data.length === 0) {
+        console.error('No rows updated - possible RLS/permission issue')
+        const errorMsg = `No rows updated - company ${companyId} may not be updateable due to permissions`
+        alert(errorMsg)
+        throw new Error(errorMsg)
+      } else {
+        console.log('Primary industry update successful:', data)
+      }
+    } catch (error) {
+      console.error('Caught error:', error)
+      logger.logError(error as Error, 'Error updating primary industry', { companyId, newIndustry })
+      if (!(error as Error)?.message?.includes('Failed to update primary industry')) {
+        alert(`Failed to update primary industry: ${(error as Error)?.message || 'Unknown error'}`)
+      }
+      throw error
+    }
+  }
+
   const handleUpdateContact = async (contactId: string, updates: Partial<Pick<Tables<'contacts'>, 'email' | 'email_subject' | 'email_body' | 'text_message' | 'verifalia_email_valid'>>) => {
     try {
       console.log('Update contact - contactId:', contactId, 'updates:', updates)
@@ -1316,7 +1398,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
           ) : (
             paginatedData.data.map((company) => (
             <React.Fragment key={company.id}>
-              <TableRow className="cursor-pointer">
+              <TableRow className="cursor-pointer group">
                 <TableCell>
                   <Button
                     variant="ghost"
@@ -1340,7 +1422,63 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                   </div>
                 </TableCell>
                 <TableCell>
-                  <TruncatedText text={company.industry} maxLength={25} />
+                  {editingPrimaryIndustry === company.id ? (
+                    <div className="flex items-center gap-2 min-w-[200px]">
+                      {isCustomIndustry ? (
+                        <Input
+                          value={primaryIndustryValue}
+                          onChange={(e) => setPrimaryIndustryValue(e.target.value)}
+                          placeholder="Enter other industry"
+                          className="text-sm h-8"
+                          autoFocus
+                        />
+                      ) : (
+                        <select
+                          value={primaryIndustryValue}
+                          onChange={(e) => handleIndustryDropdownChange(e.target.value)}
+                          className="text-sm h-8 px-2 border rounded"
+                          autoFocus
+                        >
+                          <option value="">Select industry...</option>
+                          {industryOptions.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                          <option value="other">Other...</option>
+                        </select>
+                      )}
+                      <Button
+                        size="sm"
+                        onClick={() => savePrimaryIndustry(company.id)}
+                        className="h-6 px-2 text-xs"
+                        disabled={!primaryIndustryValue.trim()}
+                      >
+                        Save
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={cancelEditingPrimaryIndustry}
+                        className="h-6 px-2 text-xs"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  ) : (
+                    <div 
+                      onClick={() => startEditingPrimaryIndustry(company.id, company.primary_industry)}
+                      className="cursor-pointer hover:bg-muted/50 px-2 py-1 rounded text-sm min-h-[24px] flex items-center"
+                      title="Click to edit industry"
+                    >
+                      {company.primary_industry ? (
+                        <TruncatedText text={company.primary_industry} maxLength={25} />
+                      ) : (
+                        <span className="text-blue-600">click to set</span>
+                      )}
+                      <Edit className="h-3 w-3 ml-2 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </div>
+                  )}
                 </TableCell>
                 <TableCell>
                   {company.website ? (
@@ -1575,6 +1713,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
         onClose={() => setIsFilterModalOpen(false)}
         onApplyFilters={handleApplyFilters}
         statusOptions={companyStatusOptions}
+        industryOptions={industryOptions}
         currentFilters={currentFilters}
       />
     </div>

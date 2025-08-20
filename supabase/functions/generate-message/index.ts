@@ -77,7 +77,9 @@ export async function getContactsWithCompanyData(supabase: SupabaseClient<Databa
             companies!inner(
                 id,
                 name,
-                industry
+                industry,
+                naics_codes,
+                sic_codes
             )
         `)
         .in('zoominfo_id', zoomInfoIds);

@@ -25,10 +25,11 @@ interface FilterModalProps {
   onClose: () => void
   onApplyFilters: (filters: FilterState) => void
   statusOptions: StatusOption[]
+  industryOptions?: string[]
   currentFilters: FilterState
 }
 
-export function FilterModal({ isOpen, onClose, onApplyFilters, statusOptions, currentFilters }: FilterModalProps) {
+export function FilterModal({ isOpen, onClose, onApplyFilters, statusOptions, industryOptions = [], currentFilters }: FilterModalProps) {
   const [selectedField, setSelectedField] = useState<string>('status')
   const [selectedValues, setSelectedValues] = useState<string[]>([])
   const [filters, setFilters] = useState<FilterState>(currentFilters)
@@ -36,7 +37,8 @@ export function FilterModal({ isOpen, onClose, onApplyFilters, statusOptions, cu
   const [isValueDropdownOpen, setIsValueDropdownOpen] = useState(false)
 
   const fieldOptions = [
-    { value: 'status', label: 'Status' }
+    { value: 'status', label: 'Status' },
+    { value: 'industry', label: 'Industry' }
   ]
 
   useEffect(() => {
@@ -46,18 +48,31 @@ export function FilterModal({ isOpen, onClose, onApplyFilters, statusOptions, cu
   useEffect(() => {
     if (isOpen) {
       const statusFilter = filters.criteria.find(c => c.field === 'status')
+      const industryFilter = filters.criteria.find(c => c.field === 'industry')
+      
       if (statusFilter) {
+        setSelectedField('status')
         setSelectedValues(statusFilter.values)
+      } else if (industryFilter) {
+        setSelectedField('industry')
+        setSelectedValues(industryFilter.values)
       } else {
+        setSelectedField('status')
         setSelectedValues([])
       }
-      setSelectedField('status')
     }
   }, [isOpen, filters])
 
   const getAvailableValues = () => {
     if (selectedField === 'status') {
       return statusOptions
+    }
+    if (selectedField === 'industry') {
+      return industryOptions.map(option => ({
+        value: option,
+        label: option,
+        className: 'bg-blue-100 text-blue-800'
+      }))
     }
     return []
   }
@@ -104,6 +119,9 @@ export function FilterModal({ isOpen, onClose, onApplyFilters, statusOptions, cu
     if (field === 'status') {
       const option = statusOptions.find(opt => opt.value === value)
       return option?.label || value
+    }
+    if (field === 'industry') {
+      return value
     }
     return value
   }

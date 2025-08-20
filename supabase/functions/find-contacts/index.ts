@@ -107,7 +107,7 @@ async function getCompanyById(supabase: SupabaseClient<Database>, companyId: str
     return data as Company;
 }
 
-async function updateCompanyStatus(supabase: SupabaseClient<Database>, companyId: string, status: string, companyRevenue: number | null, zoominfo_id: number | null, companySicCodes?: string, companyNaicsCodes?: string, companyPrimaryIndustry?: string|null) {
+async function updateCompanyStatus(supabase: SupabaseClient<Database>, companyId: string, status: string, companyRevenue: number | null, zoominfo_id: number | null, companySicCodes?: string, companyNaicsCodes?: string, companyPrimaryIndustry?: string|null, sicDescriptions?: string[], naicsDescriptions?: string[]) {
     const updateData: any = { status: status, updated_at: new Date().toISOString() };
     if (zoominfo_id !== undefined) {
         updateData.zoominfo_id = zoominfo_id;
@@ -126,6 +126,14 @@ async function updateCompanyStatus(supabase: SupabaseClient<Database>, companyId
 
     if (companyPrimaryIndustry !== undefined && companyPrimaryIndustry !== null){
         updateData.primary_industry = companyPrimaryIndustry;
+    }
+
+    if (sicDescriptions !== undefined && sicDescriptions.length > 0) {
+        updateData.sic_descriptions = sicDescriptions.join(';');
+    }
+
+    if (naicsDescriptions !== undefined && naicsDescriptions.length > 0) {
+        updateData.naics_descriptions = naicsDescriptions.join(';');
     }
 
     logger.info(`updating company status: ${JSON.stringify(updateData)}`);
@@ -370,20 +378,19 @@ function isExecutive(jobTitle: string) {
     return false;
 }
 
-function extractSicCodes(sicCodes: Array<{id: string, name: string}>): string {
-    return sicCodes.map(code => code.id).join(',');
+function extractSicCodes(sicCodes: Array<{id: string, name: string}>): {codes: string, descriptions: string[]} {
+    const codes = sicCodes.map(code => code.id).join(',');
+    const descriptions = sicCodes.map(code => code.name);
+    return {codes, descriptions};
 }
 
-function extractNaicsCodes(naicsCodes: Array<{id: string, name: string}>): {codes: string, primaryIndustry: string | null} {
+function extractNaicsCodes(naicsCodes: Array<{id: string, name: string}>): {codes: string, descriptions: string[]} {
     const codes = naicsCodes.map(code => code.id).join(',');
-    
-    const mostSpecificCode = naicsCodes.reduce((longest, current) => 
-        current.id.length > longest.id.length ? current : longest
-    );
+    const descriptions = naicsCodes.map(code => code.name);
     
     return {
         codes,
-        primaryIndustry: mostSpecificCode.name
+        descriptions
     };
 }
 
@@ -549,19 +556,22 @@ async function enrichCompanyContacts(company: Company, zoomInfoService: IZoomInf
         let companyRevenue: number | null = null;
         let companySicCodes: string = '';
         let companyNaicsCodes: string = '';
-        let companyPrimaryIndustry = null;
+        let sicDescriptions: string[] = [];
+        let naicsDescriptions: string[] = [];
         if (enrichedContacts.length > 0){
             const company:any = enrichedContacts[0].company;
             if (company && company.revenueNumeric){
                 companyRevenue = company.revenueNumeric;
             }
             if (company && company.sicCodes){
-                companySicCodes = extractSicCodes(company.sicCodes); 
+                const sicResult = extractSicCodes(company.sicCodes);
+                companySicCodes = sicResult.codes;
+                sicDescriptions = sicResult.descriptions;
             }
             if (company && company.naicsCodes){
                 const naicsResult = extractNaicsCodes(company.naicsCodes);
                 companyNaicsCodes = naicsResult.codes;
-                companyPrimaryIndustry = naicsResult.primaryIndustry;
+                naicsDescriptions = naicsResult.descriptions;
             }
         }
         if (enrichedContacts.length > 0) {
@@ -591,7 +601,7 @@ async function enrichCompanyContacts(company: Company, zoomInfoService: IZoomInf
             finalStatus = 'low_revenue';
         }
         
-        await updateCompanyStatus(supabase, company.id, finalStatus, companyRevenue, zoomInfoCompanyId, companySicCodes, companyNaicsCodes, companyPrimaryIndustry);
+        await updateCompanyStatus(supabase, company.id, finalStatus, companyRevenue, zoomInfoCompanyId, companySicCodes, companyNaicsCodes, null, sicDescriptions, naicsDescriptions);
         
         logger.info('Successfully enriched contacts for company', {
             companyId: company.id,

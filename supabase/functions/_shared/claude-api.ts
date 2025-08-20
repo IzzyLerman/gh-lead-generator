@@ -17,28 +17,62 @@ interface ContactInfo {
   industry: string[] | null;
   photoLocation: string;
   company_id?: string;
+  sicDescriptions?: string[];
+  naicsDescriptions?: string[];
 }
 
 const CLAUDE_MODEL = 'claude-3-haiku-20240307';
 const MAX_TOKENS = 1000;
 
-async function getPrimaryIndustry(
+async function getIndustryList(
   contact: ContactInfo,
   supabaseUrl: string,
   supabaseKey: string
 ): Promise<string> {
+  // First, try to use all available industry descriptions from NAICS and SIC codes
+  const allDescriptions: string[] = [];
+  
+  if (contact.naicsDescriptions && contact.naicsDescriptions.length > 0) {
+    allDescriptions.push(...contact.naicsDescriptions);
+  }
+  
+  if (contact.sicDescriptions && contact.sicDescriptions.length > 0) {
+    allDescriptions.push(...contact.sicDescriptions);
+  }
+  
+  if (allDescriptions.length > 0) {
+    return allDescriptions.join(', ');
+  }
+  
+  // Fallback to database-stored descriptions
   if (contact.company_id) {
     try {
       const supabase = createClient<Database>(supabaseUrl, supabaseKey);
       
       const { data: company, error } = await supabase
         .from('companies')
-        .select('primary_industry')
+        .select('primary_industry, naics_descriptions, sic_descriptions')
         .eq('id', contact.company_id)
         .single();
       
-      if (!error && company?.primary_industry) {
-        return company.primary_industry;
+      if (!error && company) {
+        const dbDescriptions: string[] = [];
+        
+        if (company.naics_descriptions) {
+          dbDescriptions.push(...company.naics_descriptions.split(';'));
+        }
+        
+        if (company.sic_descriptions) {
+          dbDescriptions.push(...company.sic_descriptions.split(';'));
+        }
+        
+        if (dbDescriptions.length > 0) {
+          return dbDescriptions.join(', ');
+        }
+        
+        if (company.primary_industry) {
+          return company.primary_industry;
+        }
       }
     } catch (error) {
       console.error('Failed to get primary industry, falling back to legacy industry:', error);
@@ -59,7 +93,7 @@ async function createEmailPrompt(
   const logger = createLogger('claude-api');
   
   const streetName = extractStreetName(contact.photoLocation);
-  const primaryIndustry = await getPrimaryIndustry(contact, supabaseUrl, supabaseKey);
+  const primaryIndustry = await getIndustryList(contact, supabaseUrl, supabaseKey);
   const contactName = contact.firstName || contact.name || 'Business Owner';
   const contactTitle = contact.title || 'Owner';
   const companyName = contact.companyName || 'Company Name';
@@ -111,7 +145,7 @@ async function createTextPrompt(
   const logger = createLogger('claude-api');
   
   const streetName = extractStreetName(contact.photoLocation);
-  const primaryIndustry = await getPrimaryIndustry(contact, supabaseUrl, supabaseKey);
+  const primaryIndustry = await getIndustryList(contact, supabaseUrl, supabaseKey);
   const contactName = contact.firstName || contact.name || 'Business Owner';
   const contactTitle = contact.title || 'Owner';
   const companyName = contact.companyName || 'Company Name';
@@ -180,7 +214,7 @@ async function generateIndustryPrefix(
   supabaseUrl: string,
   supabaseKey: string
 ): Promise<string> {
-  const primaryIndustry = await getPrimaryIndustry(contact, supabaseUrl, supabaseKey);
+  const primaryIndustry = await getIndustryList(contact, supabaseUrl, supabaseKey);
   
   let industryToUse: string;
   if (primaryIndustry && primaryIndustry !== 'business') {
@@ -191,20 +225,35 @@ async function generateIndustryPrefix(
     industryToUse = 'business';
   }
 
-  const prompt = `Convert this industry information into a clean, natural phrase for use in a business email: "${industryToUse}". 
+  const prompt = `You must choose the closest description from this list of five given a list of industry descriptions for a company.
+        Industry options: plumbing, HVAC, roofing and siding, landscaping, electrical contracting
 
-Return only a short, lowercase phrase that would fit naturally in this sentence: "we help owners in the ___ industry". 
-
+Return ONLY one of these five industry options with NO other formatting or notes
 For example:
-- "Plumbing Contractors" → "plumbing"
-- "Landscaping Services" → "landscaping" 
-- "Construction General Contractors" → "construction"
+- "Plumbing Contractors, Plumbing Equipment" → "plumbing"
+- "Landscaping Services, Landscaping Architecural Services" → "landscaping" 
 - "HVAC Contractors" → "HVAC"
 
-Just return the cleaned industry phrase, nothing else.`;
+Just return the industry phrase, with no extra text or formatting. Here is the list of descriptions of industries for this company:
+        ${primaryIndustry}`;
 
   const response = await callClaudeAPI(prompt, apiKey);
-  return response.trim().toLowerCase();
+  const industryPrefix = response.trim();
+
+  if (contact.company_id) {
+    try {
+      const supabase = createClient<Database>(supabaseUrl, supabaseKey);
+      
+      await supabase
+        .from('companies')
+        .update({ primary_industry: industryPrefix })
+        .eq('id', contact.company_id);
+    } catch (error) {
+      console.error('Failed to store industry prefix in primary_industry field:', error);
+    }
+  }
+
+  return industryPrefix;
 }
 
 function generateEmailSubject(streetName: string): string {
@@ -222,9 +271,11 @@ function createStaticEmailTemplate(
 ): string {
   const locationText = streetName ? `on ${streetName}` : 'yesterday';
   
-  return `Hi ${contactName},
+  return `Hi ${contactName}, 
 
-I spotted one of your trucks ${locationText} (pic attached). I'm Izzy with Good Hope Advisors, and we specialize in helping owners in the ${industryPrefix} industry achieve a successful exit. By running a competitive process and identifying value drivers that owners typically overlook, we raise clients' exit valuations by 20-40%. Would you be open to a brief call next week with our Managing Director Josh to discuss your long-term goals? Whether you're considering an exit soon or planning 3-5 years out, there are specific steps you can take now to maximize your eventual valuation.`;
+I spotted one of your trucks on ${streetName} (pic attached). I'm Izzy with Good Hope Advisors, and we help contractors prepare for and execute successful exits. We have a network of buyers actively seeking ${industryPrefix} businesses. By running a competitive bidding process among them, we raised a recent client's final offer by 40%. 
+
+Do you have 15 minutes for a call with our Managing Director Josh next week? He can share what’s driving valuations in the market right now.`
 }
 
 function createStaticTextTemplate(
@@ -235,17 +286,16 @@ function createStaticTextTemplate(
 ): string {
   const locationText = streetName ? `on ${streetName}` : 'yesterday';
   
-  return `Hi ${contactName},
-Spotted your truck ${locationText} (pic attached).
-I'm Izzy with Good Hope Advisors. We help business owners in the ${industryPrefix} industry prepare for and execute a profitable sale.
+  return `Hi ${contactName}, 
 
-Even if an exit is years away, the planning often starts now. By creating a competitive process and identifying value drivers, we raise exit valuations by 20-40%.
+I spotted one of your trucks on ${streetName} (pic attached). I'm Izzy with Good Hope Advisors, and we help contractors prepare for and execute successful exits. We have a network of buyers actively seeking ${industryPrefix} businesses. By running a competitive bidding process among them, we raised a recent client's final offer by 40%. 
 
-Are you open to a 15-minute call with our Managing Director Josh next week to discuss your long-term goals?
+Do you have 15 minutes for a call with our Managing Director Josh next week? He can share what’s driving valuations in the market right now.
 
-Best, Izzy Lerman
-Account Executive, Good Hope Advisors
-goodhopeadvisors.com`;
+Best,
+
+Izzy Lerman
+goodhopeadvisors.com`
 }
 
 async function callClaudeAPI(prompt: string, apiKey: string, apiUrl?: string): Promise<string> {

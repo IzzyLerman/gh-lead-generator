@@ -61,6 +61,10 @@ export async function fetchCompaniesWithContactsAndPhotos(
         countQuery = countQuery.in('status', criterion.values)
         dataQuery = dataQuery.in('status', criterion.values)
       }
+      if (criterion.field === 'industry' && criterion.values.length > 0) {
+        countQuery = countQuery.in('primary_industry', criterion.values)
+        dataQuery = dataQuery.in('primary_industry', criterion.values)
+      }
     }
   }
 

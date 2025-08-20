@@ -59,6 +59,10 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: undefined
       }
+      export_active_contacts_csv: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
       export_companies_csv: {
         Args: Record<PropertyKey, never>
         Returns: string
@@ -110,7 +114,7 @@ export type Database = {
               p_state: string
               p_website: string
             }
-        Returns: Json
+        Returns: string
       }
     }
     Enums: {
@@ -131,11 +135,13 @@ export type Database = {
           id: string
           industry: string[] | null
           naics_codes: string | null
+          naics_descriptions: string | null
           name: string
           phone: string[] | null
           primary_industry: string | null
           revenue: number | null
           sic_codes: string | null
+          sic_descriptions: string | null
           state: string | null
           status: string | null
           updated_at: string | null
@@ -151,11 +157,13 @@ export type Database = {
           id?: string
           industry?: string[] | null
           naics_codes?: string | null
+          naics_descriptions?: string | null
           name: string
           phone?: string[] | null
           primary_industry?: string | null
           revenue?: number | null
           sic_codes?: string | null
+          sic_descriptions?: string | null
           state?: string | null
           status?: string | null
           updated_at?: string | null
@@ -171,11 +179,13 @@ export type Database = {
           id?: string
           industry?: string[] | null
           naics_codes?: string | null
+          naics_descriptions?: string | null
           name?: string
           phone?: string[] | null
           primary_industry?: string | null
           revenue?: number | null
           sic_codes?: string | null
+          sic_descriptions?: string | null
           state?: string | null
           status?: string | null
           updated_at?: string | null
@@ -202,6 +212,7 @@ export type Database = {
           text_message: string | null
           title: string | null
           updated_at: string | null
+          verifalia_email_valid: string | null
           zoominfo_id: number | null
         }
         Insert: {
@@ -220,6 +231,7 @@ export type Database = {
           text_message?: string | null
           title?: string | null
           updated_at?: string | null
+          verifalia_email_valid?: string | null
           zoominfo_id?: number | null
         }
         Update: {
@@ -238,6 +250,7 @@ export type Database = {
           text_message?: string | null
           title?: string | null
           updated_at?: string | null
+          verifalia_email_valid?: string | null
           zoominfo_id?: number | null
         }
         Relationships: [
