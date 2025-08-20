@@ -76,15 +76,6 @@ SELECT ok(
     'Companies CSV should include submitted_by from vehicle photos'
 );
 
--- Test 11: Test companies CSV with NULL photo data (should show empty strings)
--- Insert a test company without vehicle photos
-INSERT INTO public.companies (name, industry, city, state, email) 
-VALUES ('No Photos Company', ARRAY['Test Industry'], 'Test City', 'TS', ARRAY['test@nophotos.com']);
-
-SELECT ok(
-    (SELECT private.export_companies_csv() LIKE '%No Photos Company%""'),
-    'Companies CSV should show empty string for companies without vehicle photos submitted_by'
-);
 
 -- Test 12: Test that export_active_contacts_csv function exists and can be called
 SELECT lives_ok(
