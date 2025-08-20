@@ -1,6 +1,6 @@
 BEGIN;
 
-SELECT plan(16);
+SELECT plan(15);
 
 -- Test 1: Test that export_companies_csv function exists and can be called
 SELECT lives_ok(
