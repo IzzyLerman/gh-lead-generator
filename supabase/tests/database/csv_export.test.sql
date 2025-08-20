@@ -1,6 +1,6 @@
 BEGIN;
 
-SELECT plan(11);
+SELECT plan(16);
 
 -- Test 1: Test that export_companies_csv function exists and can be called
 SELECT lives_ok(
@@ -16,13 +16,13 @@ SELECT lives_ok(
 
 -- Test 3: Verify companies CSV contains header row
 SELECT ok(
-    (SELECT private.export_companies_csv() LIKE 'name,industry,email_list,phone_list,city,state,status,group,submitted_by,picture_location%'),
+    (SELECT private.export_companies_csv() LIKE 'name,industry,primary_industry,email,phone,city,state,zip_code,website,revenue,sic_codes,naics_codes,id,zoominfo_id,status,created_at,updated_at,submitted_by%'),
     'Companies CSV should start with proper header row'
 );
 
 -- Test 4: Verify contacts CSV contains header row
 SELECT ok(
-    (SELECT private.export_contacts_csv() LIKE 'company_name,contact_name,first_name,middle_name,last_name,title,email,phone,email_subject,email_body,text_message%'),
+    (SELECT private.export_contacts_csv() LIKE 'name,company_name,title,email,phone,status,email_subject,email_body,text_message,first_name,middle_name,last_name,id,zoominfo_id%'),
     'Contacts CSV should start with proper header row'
 );
 
@@ -34,7 +34,7 @@ SELECT ok(
 
 -- Test 6: Verify contacts CSV contains seed data with company information
 SELECT ok(
-    (SELECT private.export_contacts_csv() LIKE '%ABC Plumbing Services%John Smith%'),
+    (SELECT private.export_contacts_csv() LIKE '%John Smith%ABC Plumbing Services%'),
     'Contacts CSV should contain seed contact data with company name'
 );
 
@@ -61,7 +61,7 @@ SELECT ok(
 
 -- Test 9: Verify contacts CSV includes company name
 SELECT ok(
-    (SELECT private.export_contacts_csv() LIKE '%"Test, Company ""Quotes""%"Test Contact"%'),
+    (SELECT private.export_contacts_csv() LIKE '%"Test Contact"%"Test, Company ""Quotes""%'),
     'Contacts CSV should include company name for each contact'
 );
 
@@ -72,8 +72,8 @@ VALUES ('test-photo.jpg', 'test@example.com', 'San Francisco, CA',
         (SELECT id FROM public.companies WHERE name = 'Test, Company "Quotes"'));
 
 SELECT ok(
-    (SELECT private.export_companies_csv() LIKE '%test@example.com%San Francisco, CA%'),
-    'Companies CSV should include submitted_by and picture_location from vehicle photos'
+    (SELECT private.export_companies_csv() LIKE '%test@example.com%'),
+    'Companies CSV should include submitted_by from vehicle photos'
 );
 
 -- Test 11: Test companies CSV with NULL photo data (should show empty strings)
@@ -82,11 +82,69 @@ INSERT INTO public.companies (name, industry, city, state, email)
 VALUES ('No Photos Company', ARRAY['Test Industry'], 'Test City', 'TS', ARRAY['test@nophotos.com']);
 
 SELECT ok(
-    (SELECT private.export_companies_csv() LIKE '%No Photos Company%,"",""'),
-    'Companies CSV should show empty strings for companies without vehicle photos'
+    (SELECT private.export_companies_csv() LIKE '%No Photos Company%""'),
+    'Companies CSV should show empty string for companies without vehicle photos submitted_by'
+);
+
+-- Test 12: Test that export_active_contacts_csv function exists and can be called
+SELECT lives_ok(
+    $$ SELECT private.export_active_contacts_csv() $$,
+    'Should be able to call export_active_contacts_csv function'
+);
+
+-- Test 13: Verify active contacts CSV contains proper header row
+SELECT ok(
+    (SELECT private.export_active_contacts_csv() LIKE 'Today''s Date,name,email,companyWebsite,companyPhoneNumber,phone_number%'),
+    'Active contacts CSV should start with proper header row'
+);
+
+-- Test 14: Test active contacts CSV with active status filter
+-- Insert test data for active contacts
+INSERT INTO public.companies (name, website, phone) 
+VALUES ('Active Test Company', 'https://activetest.com', ARRAY['555-999-0000']);
+
+INSERT INTO public.contacts (name, email, phone, status, company_id)
+VALUES 
+    ('Active Contact', 'active@test.com', '555-111-2222', 'active', 
+     (SELECT id FROM public.companies WHERE name = 'Active Test Company')),
+    ('Inactive Contact', 'inactive@test.com', '555-333-4444', 'inactive',
+     (SELECT id FROM public.companies WHERE name = 'Active Test Company'));
+
+SELECT ok(
+    (SELECT private.export_active_contacts_csv() LIKE '%Active Contact%') AND
+    (SELECT private.export_active_contacts_csv() NOT LIKE '%Inactive Contact%'),
+    'Active contacts CSV should only include contacts with active status'
+);
+
+-- Test 15: Test domain extraction from contact email when company website is empty
+INSERT INTO public.companies (name, website, email) 
+VALUES ('Domain Test Company', NULL, ARRAY['info@domaintest.com']);
+
+INSERT INTO public.contacts (name, email, phone, status, company_id)
+VALUES ('Contact With Domain', 'contact@example.org', '555-777-8888', 'active',
+        (SELECT id FROM public.companies WHERE name = 'Domain Test Company'));
+
+SELECT ok(
+    (SELECT private.export_active_contacts_csv() LIKE '%https://example.org%'),
+    'Active contacts CSV should extract domain from contact email when company website is empty'
+);
+
+-- Test 16: Test domain extraction from company email when both website and contact email are empty
+INSERT INTO public.companies (name, website, email) 
+VALUES ('Company Email Domain Test', '', ARRAY['company@testdomain.net']);
+
+INSERT INTO public.contacts (name, email, phone, status, company_id)
+VALUES ('Contact No Email', '', '555-888-9999', 'active',
+        (SELECT id FROM public.companies WHERE name = 'Company Email Domain Test'));
+
+SELECT ok(
+    (SELECT private.export_active_contacts_csv() LIKE '%https://testdomain.net%'),
+    'Active contacts CSV should extract domain from company email when website and contact email are empty'
 );
 
 -- Clean up test data
+DELETE FROM public.contacts WHERE name IN ('Active Contact', 'Inactive Contact', 'Contact With Domain', 'Contact No Email');
+DELETE FROM public.companies WHERE name IN ('Active Test Company', 'Domain Test Company', 'Company Email Domain Test');
 DELETE FROM public."vehicle-photos" WHERE name = 'test-photo.jpg';
 DELETE FROM public.contacts WHERE name = 'Test Contact';
 DELETE FROM public.companies WHERE name = 'Test, Company "Quotes"';

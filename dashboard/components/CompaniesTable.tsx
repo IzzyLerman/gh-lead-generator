@@ -12,13 +12,15 @@ import {
 } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { ChevronRight, ChevronDown, Mail, Phone, MapPin, Building, Download, HelpCircle, Globe, Hash, Send, ArrowLeft, ArrowRight, Edit, Loader2 } from 'lucide-react'
+import { ChevronRight, ChevronDown, Mail, Phone, MapPin, Building, Download, HelpCircle, Globe, Hash, Send, ArrowLeft, ArrowRight, Edit, Loader2, Filter } from 'lucide-react'
 import { CompanyWithContactsAndPhotos, PaginatedResult } from '@/lib/server-utils'
-import { fetchCompaniesWithContactsAndPhotos } from '@/lib/client-utils'
+import { fetchCompaniesWithContactsAndPhotos, FilterState } from '@/lib/client-utils'
 import { VehiclePhotoGallery } from './VehiclePhotoGallery'
 import { Tables } from '@/types/database'
 import { Pagination } from '@/components/ui/pagination'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { StatusDropdown } from '@/components/ui/status-dropdown'
+import { FilterModal } from '@/components/FilterModal'
 import { createLogger } from '@/utils/logger'
 
 const PAGE_SIZE = 6
@@ -618,6 +620,8 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
   const [selectedContact, setSelectedContact] = useState<Tables<'contacts'> | null>(null)
   const [selectedCompany, setSelectedCompany] = useState<CompanyWithContactsAndPhotos | null>(null)
   const [isMessageModalOpen, setIsMessageModalOpen] = useState(false)
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false)
+  const [currentFilters, setCurrentFilters] = useState<FilterState>({ criteria: [] })
   const tableRef = React.useRef<HTMLDivElement>(null)
   const supabase = createClient()
   const logger = createLogger('companies-table')
@@ -632,7 +636,11 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
   const handlePageChange = useCallback(async (page: number) => {
     setIsLoading(true)
     try {
-      const result = await fetchCompaniesWithContactsAndPhotos({ page, pageSize: PAGE_SIZE })
+      const result = await fetchCompaniesWithContactsAndPhotos({ 
+        page, 
+        pageSize: PAGE_SIZE, 
+        filters: currentFilters 
+      })
       setPaginatedData(result)
       setExpandedCompanies(new Set()) // Clear expanded state when changing pages
     } catch (error) {
@@ -640,7 +648,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
     } finally {
       setIsLoading(false)
     }
-  }, [logger])
+  }, [logger, currentFilters])
 
   useEffect(() => {
     logger.debug('Setting up realtime subscription')
@@ -657,12 +665,9 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
           
           if (payload.eventType === 'INSERT') {
             // For new companies, refresh the current page if we're on page 1
-            setPaginatedData(prev => {
-              if (prev.currentPage === 1) {
-                handlePageChange(1)
-              }
-              return prev
-            })
+            if (paginatedData.currentPage === 1) {
+              handlePageChange(1)
+            }
           } else if (payload.eventType === 'UPDATE') {
             const updatedCompany = payload.new as Tables<'companies'>
             setPaginatedData(prev => ({
@@ -805,7 +810,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
       logger.debug('Cleaning up realtime subscription')
       supabase.removeChannel(channel)
     }
-  }, [handlePageChange, logger, supabase])
+  }, [handlePageChange, logger, supabase, paginatedData.currentPage])
 
   const toggleExpand = (companyId: string) => {
     setExpandedCompanies(prev => {
@@ -850,13 +855,14 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
 
   const sortContactsByStatus = (contacts: Tables<'contacts'>[]) => {
     const statusOrder = {
-      'ready_to_send': 1,
-      'sent': 2,
-      'do_not_contact': 3,
-      'no_contact': 4,
-      'failed': 5,
-      'non-executive': 6,
-      'generating_message': 7
+      'active': 1,
+      'ready_to_send': 2,
+      'sent': 3,
+      'do_not_contact': 4,
+      'no_contact': 5,
+      'failed': 6,
+      'non-executive': 7,
+      'generating_message': 8
     }
     
     return [...contacts].sort((a, b) => {
@@ -928,9 +934,32 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
     }
   }
 
+  const handleExportActiveContacts = async () => {
+    setIsExporting('active-contacts')
+    try {
+      const { data, error } = await supabase.schema('private').rpc('export_active_contacts_csv')
+      
+      if (error) {
+        logger.logError(error, 'Supabase error during active contacts export')
+        throw error
+      }
+      
+      if (!data) {
+        throw new Error('No data returned from export function')
+      }
+      
+      const timestamp = new Date().toISOString().split('T')[0]
+      downloadCSV(data, `active-contacts-${timestamp}.csv`)
+    } catch (error) {
+      logger.logError(error as Error, 'Error exporting active contacts')
+      alert(`Failed to export active contacts: ${(error as Error)?.message || 'Unknown error'}`)
+    } finally {
+      setIsExporting(null)
+    }
+  }
+
   const updateContactStatus = async (contactId: string, newStatus: string) => {
     try {
-      //alert(`Attempting to update contact ID: ${contactId} status to ${newStatus}`)
       console.log('Update contact status - contactId:', contactId, 'newStatus:', newStatus)
       
       const { data: existingContact, error: selectError } = await supabase
@@ -959,12 +988,14 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
         console.error('Supabase error:', error)
         logger.logError(error, 'Error updating contact status', { contactId, newStatus })
         alert(`Failed to update contact status: ${error.message}`)
+        throw error
       } else if (data && data.length === 0) {
         console.error('No rows updated - possible RLS/permission issue')
-        alert(`No rows updated - contact ${contactId} may not be updateable due to permissions`)
+        const errorMsg = `No rows updated - contact ${contactId} may not be updateable due to permissions`
+        alert(errorMsg)
+        throw new Error(errorMsg)
       } else {
         console.log('Update successful:', data)
-        //alert(`Successfully updated contact ${contactId} status to ${newStatus}`)
         
         // If marking contact as sent, also update company status to sent
         if (newStatus === 'sent' && existingContact) {
@@ -984,7 +1015,45 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
     } catch (error) {
       console.error('Caught error:', error)
       logger.logError(error as Error, 'Error updating contact status', { contactId, newStatus })
-      alert(`Failed to update contact status: ${(error as Error)?.message || 'Unknown error'}`)
+      if (!(error as Error)?.message?.includes('Failed to update contact status')) {
+        alert(`Failed to update contact status: ${(error as Error)?.message || 'Unknown error'}`)
+      }
+      throw error
+    }
+  }
+
+  const updateCompanyStatus = async (companyId: string, newStatus: string) => {
+    try {
+      console.log('Update company status - companyId:', companyId, 'newStatus:', newStatus)
+      
+      const { error, data } = await supabase
+        .from('companies')
+        .update({ status: newStatus })
+        .eq('id', companyId)
+        .select()
+      
+      console.log('Supabase company update result:', { error, data, dataLength: data?.length })
+      
+      if (error) {
+        console.error('Supabase error:', error)
+        logger.logError(error, 'Error updating company status', { companyId, newStatus })
+        alert(`Failed to update company status: ${error.message}`)
+        throw error
+      } else if (data && data.length === 0) {
+        console.error('No rows updated - possible RLS/permission issue')
+        const errorMsg = `No rows updated - company ${companyId} may not be updateable due to permissions`
+        alert(errorMsg)
+        throw new Error(errorMsg)
+      } else {
+        console.log('Company update successful:', data)
+      }
+    } catch (error) {
+      console.error('Caught error:', error)
+      logger.logError(error as Error, 'Error updating company status', { companyId, newStatus })
+      if (!(error as Error)?.message?.includes('Failed to update company status')) {
+        alert(`Failed to update company status: ${(error as Error)?.message || 'Unknown error'}`)
+      }
+      throw error
     }
   }
 
@@ -1020,6 +1089,45 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
   const handleSendEmail = async (contactId: string) => {
     await updateContactStatus(contactId, 'sent')
   }
+
+  const handleApplyFilters = async (filters: FilterState) => {
+    setCurrentFilters(filters)
+    setIsLoading(true)
+    try {
+      const result = await fetchCompaniesWithContactsAndPhotos({ 
+        page: 1, 
+        pageSize: PAGE_SIZE, 
+        filters 
+      })
+      setPaginatedData(result)
+      setExpandedCompanies(new Set())
+    } catch (error) {
+      logger.logError(error as Error, 'Error applying filters', { filters })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const companyStatusOptions = [
+    { value: 'processed', label: 'Processed', className: 'bg-green-100 text-green-800' },
+    { value: 'not_found', label: 'Company Not Found', className: 'bg-red-100 text-red-800' },
+    { value: 'low_revenue', label: 'Low Revenue', className: 'bg-yellow-100 text-yellow-800' },
+    { value: 'no_execs', label: 'No Execs Found', className: 'bg-amber-100 text-amber-800' },
+    { value: 'contacts_failed', label: 'No Contacts Found', className: 'bg-orange-100 text-orange-800' },
+    { value: 'sent', label: 'Sent', className: 'bg-purple-100 text-purple-800' },
+    { value: 'enriching', label: 'Enriching', className: 'bg-sky-100 text-sky-800' }
+  ]
+
+  const contactStatusOptions = [
+    { value: 'active', label: 'Active Lead', className: 'bg-indigo-100 text-indigo-800' },
+    { value: 'ready_to_send', label: 'Ready to Send', className: 'bg-green-100 text-green-800' },
+    { value: 'sent', label: 'Sent', className: 'bg-purple-100 text-purple-800' },
+    { value: 'do_not_contact', label: 'Do Not Contact', className: 'bg-red-100 text-red-800' },
+    { value: 'no_contact', label: 'No Contact Info', className: 'bg-orange-100 text-orange-800' },
+    { value: 'failed', label: 'Failed', className: 'bg-red-100 text-red-800' },
+    { value: 'non-executive', label: 'Non-Executive', className: 'bg-amber-100 text-amber-800' },
+    { value: 'generating_message', label: 'Generating Message', className: 'bg-sky-100 text-sky-800' }
+  ]
 
   const handleUpdateContact = async (contactId: string, updates: Partial<Pick<Tables<'contacts'>, 'email' | 'email_subject' | 'email_body' | 'text_message' | 'verifalia_email_valid'>>) => {
     try {
@@ -1080,12 +1188,20 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
       <div className="flex justify-between items-center px-6 pt-4">
         <div className="flex gap-2">
           <Button
+            onClick={() => setIsFilterModalOpen(true)}
+            variant="outline"
+            className={currentFilters.criteria.length > 0 ? 'ring-2 ring-blue-500' : ''}
+          >
+            <Filter className="h-4 w-4 mr-2" />
+            Filter {currentFilters.criteria.length > 0 && `(${currentFilters.criteria.length})`}
+          </Button>
+          <Button
             onClick={handleExportCompanies}
             disabled={isExporting !== null}
             variant="outline"
           >
             <Download className="h-4 w-4 mr-2" />
-            {isExporting === 'companies' ? 'Exporting...' : 'Export Companies to CSV'}
+            {isExporting === 'companies' ? 'Exporting...' : 'Companies'}
           </Button>
           <Button
             onClick={handleExportContacts}
@@ -1093,7 +1209,15 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
             variant="outline"
           >
             <Download className="h-4 w-4 mr-2" />
-            {isExporting === 'contacts' ? 'Exporting...' : 'Export Contacts to CSV'}
+            {isExporting === 'contacts' ? 'Exporting...' : 'Contacts'}
+          </Button>
+          <Button
+            onClick={handleExportActiveContacts}
+            disabled={isExporting !== null}
+            variant="outline"
+          >
+            <Download className="h-4 w-4 mr-2" />
+            {isExporting === 'active-contacts' ? 'Exporting...' : 'Active Contacts'}
           </Button>
         </div>
         
@@ -1106,121 +1230,25 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
           </DialogTrigger>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>How to Use the Dashboard</DialogTitle>
+              <DialogTitle>How to Use this Dashboard</DialogTitle>
             </DialogHeader>
             <div className="space-y-6">
               <div>
-                <h3 className="font-semibold mb-2">Sending Pictures</h3>
+                <h3 className="font-semibold mb-2">Submitting Pictures</h3>
                 <p className="text-sm text-muted-foreground">
-                  Email up to five images to <a href="mailto:vehicles@izzy.fish" className="text-blue-600 hover:text-blue-800 transition-colors duration-200 hover:underline">vehicles@izzy.fish</a> as attachments. It will accept .jpg, .png, .heic, .mp4, and .mov file types. If you need to submit more than five pictures, message me and I can submit them as a batch.
+                  Email up to five images to <a href="mailto:vehicles@izzy.fish" className="text-blue-600 hover:text-blue-800 transition-colors duration-200 hover:underline">vehicles@izzy.fish</a> as attachments. Include the location if the option is presented.
+                </p>
+                <h3 className="font-semibold mb-2">Accepted File Types</h3>
+                <p className="text-sm text-muted-foreground">
+                    Any photos taken with iPhone should be accepted: .jpg, .png, .heic, .mp4, and .mov 
                 </p>
 	      </div>
 	      <div>
                 <h3 className="font-semibold mb-2">Outreach</h3>
 		<p className="text-sm text-muted-foreground">
-		  For now, I&#39;m doing the outreach manually and updating the statuses accordingly as I send them out.
+            Messages will be automatically generated for executives with valid contact information. Emails can be sent directly
+            from the dashboard: hit &quot;view message&quot;, make any desired changes to the message content, and hit send. Text messages must be sent out manually.
 		</p>
-              </div>
-              
-              <div>
-                <h3 className="font-semibold mb-3">Status Key</h3>
-                <div className="space-y-3">
-                  <div>
-                    <h4 className="font-medium text-sm mb-2">Company Statuses</h4>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-3">
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                          Enriching
-                        </span>
-                        <span className="text-sm text-muted-foreground">Processing company data and finding contacts</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                          Processed
-                        </span>
-                        <span className="text-sm text-muted-foreground">Company successfully processed with contacts found</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                          Not Found
-                        </span>
-                        <span className="text-sm text-muted-foreground">Company not found in ZoomInfo database</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                          Low Revenue
-                        </span>
-                        <span className="text-sm text-muted-foreground">Company revenue below minimum threshold</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                          No Execs
-                        </span>
-                        <span className="text-sm text-muted-foreground">No executive contacts found for this company</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                          Contacts Failed
-                        </span>
-                        <span className="text-sm text-muted-foreground">No contacts found for company in Zoominfo</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                          Sent
-                        </span>
-                        <span className="text-sm text-muted-foreground">Company has been contacted</span>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <h4 className="font-medium text-sm mb-2">Contact Statuses</h4>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-3">
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                          Ready to Send
-                        </span>
-                        <span className="text-sm text-muted-foreground">Contact is ready for outreach with personalized message</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                          Sent
-                        </span>
-                        <span className="text-sm text-muted-foreground">Outreach message has been sent to this contact</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                          Do Not Contact
-                        </span>
-                        <span className="text-sm text-muted-foreground">Contact should not be contacted (opted out or inappropriate)</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                          No Contact
-                        </span>
-                        <span className="text-sm text-muted-foreground">No email or phone number available for contact</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                          Failed
-                        </span>
-                        <span className="text-sm text-muted-foreground">Error occurred during contact processing</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                          Non-Executive
-                        </span>
-                        <span className="text-sm text-muted-foreground">Contact is not in an executive role</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                          Generating Message
-                        </span>
-                        <span className="text-sm text-muted-foreground">Automatically generating a personalized outreach message</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
               </div>
               
               <div>
@@ -1333,32 +1361,11 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                 </TableCell>
                 {/* Status */}
                 <TableCell>
-                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                    company.status === 'enriching' 
-                      ? 'bg-yellow-100 text-yellow-800' 
-                      : company.status === 'processed'
-                      ? 'bg-green-100 text-green-800'
-                      : company.status === 'not_found'
-                      ? 'bg-gray-100 text-gray-800'
-                      : company.status === 'low_revenue'
-                      ? 'bg-orange-100 text-orange-800'
-                      : company.status === 'no_execs'
-                      ? 'bg-purple-100 text-purple-800'
-                      : company.status === 'contacts_failed'
-                      ? 'bg-red-100 text-red-800'
-                      : company.status === 'sent'
-                      ? 'bg-purple-100 text-purple-800'
-                      : 'bg-yellow-100 text-yellow-800'
-                  }`}>
-                    {company.status === 'enriching' ? 'Enriching' 
-                      : company.status === 'processed' ? 'Processed'
-                      : company.status === 'not_found' ? 'Not Found'
-                      : company.status === 'low_revenue' ? 'Low Revenue'
-                      : company.status === 'no_execs' ? 'No Execs'
-                      : company.status === 'contacts_failed' ? 'Contacts Failed'
-                      : company.status === 'sent' ? 'Sent'
-                      : 'Enriching'}
-                  </span>
+                  <StatusDropdown
+                    currentStatus={company.status || 'enriching'}
+                    statusOptions={companyStatusOptions}
+                    onStatusChange={(newStatus) => updateCompanyStatus(company.id, newStatus)}
+                  />
                 </TableCell>
                 {/* Photos */}
                 <TableCell>
@@ -1475,32 +1482,11 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                          contact.status === 'ready_to_send' 
-                            ? 'bg-green-100 text-green-800' 
-                            : contact.status === 'sent'
-                            ? 'bg-purple-100 text-purple-800'
-                            : contact.status === 'do_not_contact'
-                            ? 'bg-red-100 text-red-800'
-                            : contact.status === 'no_contact'
-                            ? 'bg-gray-100 text-gray-800'
-                            : contact.status === 'failed'
-                            ? 'bg-red-100 text-red-800'
-                            : contact.status === 'non-executive'
-                            ? 'bg-orange-100 text-orange-800'
-                            : contact.status === 'generating_message'
-                            ? 'bg-blue-100 text-blue-800'
-                            : 'bg-blue-100 text-blue-800'
-                        }`}>
-                          {contact.status === 'ready_to_send' ? 'Ready to Send' 
-                            : contact.status === 'sent' ? 'Sent'
-                            : contact.status === 'do_not_contact' ? 'Do Not Contact'
-                            : contact.status === 'no_contact' ? 'No Contact'
-                            : contact.status === 'failed' ? 'Failed'
-                            : contact.status === 'non-executive' ? 'Non-Executive'
-                            : contact.status === 'generating_message' ? 'Generating Message'
-                            : 'Generating Message'}
-                        </span>
+                        <StatusDropdown
+                          currentStatus={contact.status || 'generating_message'}
+                          statusOptions={contactStatusOptions}
+                          onStatusChange={(newStatus) => updateContactStatus(contact.id, newStatus)}
+                        />
                       </TableCell>
                       <TableCell>
                         {(contact.email_subject || contact.email_body || contact.text_message) ? (
@@ -1582,6 +1568,14 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
         onMarkAsSent={handleMarkAsSent}
         onUpdateContact={handleUpdateContact}
         onSendEmail={handleSendEmail}
+      />
+      
+      <FilterModal
+        isOpen={isFilterModalOpen}
+        onClose={() => setIsFilterModalOpen(false)}
+        onApplyFilters={handleApplyFilters}
+        statusOptions={companyStatusOptions}
+        currentFilters={currentFilters}
       />
     </div>
   )
