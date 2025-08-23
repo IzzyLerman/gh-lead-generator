@@ -9,7 +9,7 @@ export async function getThumbnailImageUrl(fileName: string): Promise<string | n
   const logger = createLogger('image-utils')
   
   try {
-    let thumbnailPath: string
+    const possiblePaths: string[] = []
     
     // Handle full path format (uploads/vehicle_uuid.jpg)
     if (fileName.startsWith('uploads/')) {
@@ -17,43 +17,42 @@ export async function getThumbnailImageUrl(fileName: string): Promise<string | n
       // Extract UUID from vehicle_uuid.jpg format and use it for thumbnail
       const uuidMatch = baseFileName.match(/vehicle_([a-f0-9-]{36})\.(jpg|jpeg|png|webp)/i)
       if (uuidMatch) {
-        thumbnailPath = `thumbnails/${uuidMatch[1]}.jpg`
-      } else {
-        // Fallback: use base filename for thumbnail
-        thumbnailPath = `thumbnails/${baseFileName}`
+        possiblePaths.push(`thumbnails/${uuidMatch[1]}.jpg`)
       }
+      // Try both vehicle_ prefix and direct filename
+      possiblePaths.push(`thumbnails/vehicle_${baseFileName}`)
+      possiblePaths.push(`thumbnails/${baseFileName}`)
     } else if (fileName.startsWith('vehicle_')) {
       // Handle legacy vehicle_uuid.jpg format
       const uuidMatch = fileName.match(/vehicle_([a-f0-9-]{36})\.(jpg|jpeg|png|webp)/i)
       if (uuidMatch) {
-        thumbnailPath = `thumbnails/${uuidMatch[1]}.jpg`
-      } else {
-        // Fallback: use filename as-is
-        thumbnailPath = `thumbnails/${fileName}`
+        possiblePaths.push(`thumbnails/${uuidMatch[1]}.jpg`)
       }
+      possiblePaths.push(`thumbnails/${fileName}`)
     } else {
-      // Handle other formats (direct UUID or legacy)
-      thumbnailPath = `thumbnails/${fileName}`
+      // Handle other formats - try with vehicle_ prefix first, then direct
+      possiblePaths.push(`thumbnails/vehicle_${fileName}`)
+      possiblePaths.push(`thumbnails/${fileName}`)
     }
     
-    logger.debug('Getting signed URL for thumbnail', { fileName, thumbnailPath })
-    
-    const { data, error } = await supabase.storage
-      .from(BUCKET_NAME)
-      .createSignedUrl(thumbnailPath, 60 * 60) // 1 hour expiry
+    // Try each possible path until we find one that works
+    for (const thumbnailPath of possiblePaths) {
+      logger.debug('Trying thumbnail path', { fileName, thumbnailPath })
+      
+      const { data, error } = await supabase.storage
+        .from(BUCKET_NAME)
+        .createSignedUrl(thumbnailPath, 60 * 60) // 1 hour expiry
 
-    if (error) {
-      logger.logError(error, 'Error creating thumbnail signed URL', { fileName, thumbnailPath })
-      return null
+      if (!error && data?.signedUrl) {
+        logger.debug('Successfully created thumbnail signed URL', { fileName, thumbnailPath })
+        return data.signedUrl
+      }
+      
+      logger.debug('Thumbnail path failed, trying next', { fileName, thumbnailPath, error: error?.message })
     }
 
-    if (!data?.signedUrl) {
-      logger.error('No thumbnail signed URL returned', { fileName, thumbnailPath })
-      return null
-    }
-
-    logger.debug('Successfully created thumbnail signed URL', { fileName, thumbnailPath })
-    return data.signedUrl
+    logger.error('No thumbnail found for any path', { fileName, possiblePaths })
+    return null
   } catch (error) {
     logger.logError(error as Error, 'Error in getThumbnailImageUrl', { fileName })
     return null

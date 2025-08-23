@@ -152,7 +152,7 @@ async function main() {
       console.log(`✅ Photo ${photoPath} is linked to company: ${photoRecord.companies.name}`);
       validPhotos++;
       
-      const thumbnailPath = `thumbnails/${file.name}`;
+      const thumbnailPath = `thumbnails/vehicle_${file.name}`;
       
       const { data: existingThumbnail } = await supabase.storage
         .from(BUCKET_NAME)
