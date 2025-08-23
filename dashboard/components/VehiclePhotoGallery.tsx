@@ -8,7 +8,6 @@ import { getSignedImageUrl, getThumbnailImageUrl, triggerImageDownload, openImag
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Download, ExternalLink, Eye, Loader2 } from 'lucide-react'
-import { createLogger } from '@/utils/logger'
 
 interface VehiclePhotoGalleryProps {
   photos: Tables<'vehicle-photos'>[]
