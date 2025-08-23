@@ -5,6 +5,7 @@
     "jsr:@supabase/functions-js@*": "2.4.5",
     "npm:@aws-sdk/client-s3@*": "3.864.0",
     "npm:@aws-sdk/s3-request-presigner@*": "3.864.0",
+    "npm:@imagemagick/magick-wasm@^0.0.35": "0.0.35",
     "npm:@jsquash/jpeg@^1.6.0": "1.6.0",
     "npm:@supabase/supabase-js@^2.50.0": "2.50.3",
     "npm:@types/node@*": "22.12.0",
@@ -613,6 +614,9 @@
       "integrity": "sha512-dzttzO7m23JtBtGTmjrqrDxCy47jhL/jVJ9PZe7aNQIoEIyiuSgrmuoFk42QVTpXaJnw0odXarIBZOiN6FZYmg==",
       "os": ["win32"],
       "cpu": ["x64"]
+    },
+    "@imagemagick/magick-wasm@0.0.35": {
+      "integrity": "sha512-Wh5C15QyOkJb1i37j9Vpi5OhqCoXwZ/v9LBxo+LUAhiBBtBnRK7Nlg98KGHdtiJocBE3C4FJ+rv+BMrFevzwnw=="
     },
     "@jsquash/jpeg@1.6.0": {
       "integrity": "sha512-zwN46Awh1VM6gXlIcALwb5WzqK5H2e6+Awcs1QP8AvS8ohsK/sbE4esvmH4jhlhW7+CgiUUww66vg0aTnlSIMA=="
@@ -1936,6 +1940,7 @@
   "workspace": {
     "packageJson": {
       "dependencies": [
+        "npm:@imagemagick/magick-wasm@^0.0.35",
         "npm:@jsquash/jpeg@^1.6.0",
         "npm:@supabase/supabase-js@^2.50.0",
         "npm:cloudinary@^2.7.0",

@@ -642,6 +642,8 @@ async function processMessages(companies: CompanyUpsertData[], messages: QueueMe
   const processPromises = companies.map(async (company, idx) => {
     const message = messages[idx];
     const pathname = message.message.image_path;
+    // Since we now store full upload paths in vehicle-photos, use the full path
+    const vehiclePhotoName = pathname;
     
     try {
       const result = await upsertCompany(supabase, company);
@@ -653,7 +655,7 @@ async function processMessages(companies: CompanyUpsertData[], messages: QueueMe
         await supabase
           .from('vehicle-photos')
           .update({ status: 'failed' })
-          .eq('name', pathname);
+          .eq('name', vehiclePhotoName);
           
         await archiveMessage(pgmq_public, message);
       } else {
@@ -676,12 +678,12 @@ async function processMessages(companies: CompanyUpsertData[], messages: QueueMe
             company_id: companyId,
             status: 'processed'
           })
-          .eq('name', pathname);
+          .eq('name', vehiclePhotoName);
         
         if (updateError) {
           logger.logError(updateError, 'Error updating vehicle_photos with company_id', {
             companyId,
-            imagePath: pathname
+            imagePath: vehiclePhotoName
           });
           throw updateError;
         }
@@ -697,18 +699,18 @@ async function processMessages(companies: CompanyUpsertData[], messages: QueueMe
           company_id: companyId,
           status: 'processed'
         })
-        .eq('name', pathname);
+        .eq('name', vehiclePhotoName);
       
       if (updateError) {
         logger.logError(updateError, 'Error updating vehicle_photos with company_id', {
           companyId,
-          imagePath: pathname
+          imagePath: vehiclePhotoName
         });
         throw updateError; // Re-throw to trigger failure handling
       } else {
         logger.debug('Vehicle photo linked to company and marked as processed', {
           companyId,
-          imagePath: pathname
+          imagePath: vehiclePhotoName
         });
       }
       
@@ -736,7 +738,7 @@ async function processMessages(companies: CompanyUpsertData[], messages: QueueMe
     } catch (error) {
       logger.logError(error instanceof Error ? error : new Error(String(error)), 'Error processing message', {
         messageId: message.msg_id,
-        imagePath: pathname,
+        imagePath: vehiclePhotoName,
         companyName: company.name
       });
       
@@ -744,7 +746,7 @@ async function processMessages(companies: CompanyUpsertData[], messages: QueueMe
       await supabase
         .from('vehicle-photos')
         .update({ status: 'failed' })
-        .eq('name', pathname);
+        .eq('name', vehiclePhotoName);
         
       await archiveMessage(pgmq_public, message);
     }

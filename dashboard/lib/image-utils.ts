@@ -4,27 +4,103 @@ import { createLogger } from '@/utils/logger'
 
 const BUCKET_NAME = 'gh-vehicle-photos'
 
+export async function getThumbnailImageUrl(fileName: string): Promise<string | null> {
+  const supabase = createClient()
+  const logger = createLogger('image-utils')
+  
+  try {
+    let thumbnailPath: string
+    
+    // Handle full path format (uploads/vehicle_uuid.jpg)
+    if (fileName.startsWith('uploads/')) {
+      const baseFileName = fileName.split('/').pop() || fileName
+      // Extract UUID from vehicle_uuid.jpg format and use it for thumbnail
+      const uuidMatch = baseFileName.match(/vehicle_([a-f0-9-]{36})\.(jpg|jpeg|png|webp)/i)
+      if (uuidMatch) {
+        thumbnailPath = `thumbnails/${uuidMatch[1]}.jpg`
+      } else {
+        // Fallback: use base filename for thumbnail
+        thumbnailPath = `thumbnails/${baseFileName}`
+      }
+    } else if (fileName.startsWith('vehicle_')) {
+      // Handle legacy vehicle_uuid.jpg format
+      const uuidMatch = fileName.match(/vehicle_([a-f0-9-]{36})\.(jpg|jpeg|png|webp)/i)
+      if (uuidMatch) {
+        thumbnailPath = `thumbnails/${uuidMatch[1]}.jpg`
+      } else {
+        // Fallback: use filename as-is
+        thumbnailPath = `thumbnails/${fileName}`
+      }
+    } else {
+      // Handle other formats (direct UUID or legacy)
+      thumbnailPath = `thumbnails/${fileName}`
+    }
+    
+    logger.debug('Getting signed URL for thumbnail', { fileName, thumbnailPath })
+    
+    const { data, error } = await supabase.storage
+      .from(BUCKET_NAME)
+      .createSignedUrl(thumbnailPath, 60 * 60) // 1 hour expiry
+
+    if (error) {
+      logger.logError(error, 'Error creating thumbnail signed URL', { fileName, thumbnailPath })
+      return null
+    }
+
+    if (!data?.signedUrl) {
+      logger.error('No thumbnail signed URL returned', { fileName, thumbnailPath })
+      return null
+    }
+
+    logger.debug('Successfully created thumbnail signed URL', { fileName, thumbnailPath })
+    return data.signedUrl
+  } catch (error) {
+    logger.logError(error as Error, 'Error in getThumbnailImageUrl', { fileName })
+    return null
+  }
+}
+
 export async function getSignedImageUrl(fileName: string): Promise<string | null> {
   const supabase = createClient()
   const logger = createLogger('image-utils')
   
   try {
-    logger.debug('Getting signed URL for image', { fileName })
+    let fullSizePath: string
+    
+    // Handle full path format (uploads/vehicle_uuid.jpg) - use as-is
+    if (fileName.startsWith('uploads/')) {
+      fullSizePath = fileName
+    } else if (fileName.startsWith('vehicle_')) {
+      // Handle legacy vehicle_uuid.jpg format
+      const uuidMatch = fileName.match(/vehicle_([a-f0-9-]{36})\.(jpg|jpeg|png|webp)/i)
+      if (uuidMatch) {
+        fullSizePath = `uploads/${uuidMatch[1]}.jpg`
+      } else {
+        // Fallback: add uploads/ prefix
+        fullSizePath = `uploads/${fileName}`
+      }
+    } else {
+      // Handle other formats (direct UUID or legacy)
+      fullSizePath = `uploads/${fileName}`
+    }
+    
+    logger.debug('Getting signed URL for full-size image', { fileName, fullSizePath })
+    
     const { data, error } = await supabase.storage
       .from(BUCKET_NAME)
-      .createSignedUrl(fileName, 60 * 60) // 1 hour expiry
+      .createSignedUrl(fullSizePath, 60 * 60) // 1 hour expiry
 
     if (error) {
-      logger.logError(error, 'Error creating signed URL', { fileName })
+      logger.logError(error, 'Error creating signed URL', { fileName, fullSizePath })
       return null
     }
 
     if (!data?.signedUrl) {
-      logger.error('No signed URL returned', { fileName })
+      logger.error('No signed URL returned', { fileName, fullSizePath })
       return null
     }
 
-    logger.debug('Successfully created signed URL', { fileName })
+    logger.debug('Successfully created signed URL', { fileName, fullSizePath })
     return data.signedUrl
   } catch (error) {
     logger.logError(error as Error, 'Error in getSignedImageUrl', { fileName })
@@ -35,9 +111,11 @@ export async function getSignedImageUrl(fileName: string): Promise<string | null
 export async function getPublicImageUrl(fileName: string): Promise<string> {
   const supabase = createClient()
   
+  // Handle full path format or add uploads/ prefix
+  const fullSizePath = fileName.startsWith('uploads/') ? fileName : `uploads/${fileName}`
   const { data } = supabase.storage
     .from(BUCKET_NAME)
-    .getPublicUrl(fileName)
+    .getPublicUrl(fullSizePath)
   
   return data.publicUrl
 }
@@ -47,12 +125,14 @@ export async function downloadImage(fileName: string): Promise<Blob | null> {
   const logger = createLogger('image-utils')
   
   try {
+    // Handle full path format or add uploads/ prefix
+    const fullSizePath = fileName.startsWith('uploads/') ? fileName : `uploads/${fileName}`
     const { data, error } = await supabase.storage
       .from(BUCKET_NAME)
-      .download(fileName)
+      .download(fullSizePath)
 
     if (error) {
-      logger.logError(error, 'Error downloading image', { fileName })
+      logger.logError(error, 'Error downloading image', { fileName, fullSizePath })
       return null
     }
 

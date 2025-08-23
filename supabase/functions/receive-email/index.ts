@@ -743,10 +743,13 @@ async function uploadFileAndCreateRecord(
   const uploadData = await uploadFileToStorage(supabase, file, filename);
   
   // Create record in vehicle-photos table with separated GPS and location data
+  // Extract just the filename without the folder prefix for compatibility
+  const vehicleFilename = uploadData.path.split('/').pop() || uploadData.path;
+  
   const { error: insertError } = await supabase
     .from("vehicle-photos")
     .upsert({
-      name: uploadData.path,
+      name: vehicleFilename,
       submitted_by: senderEmail,
       status: 'unprocessed',
       gps: gpsCoordinates,
@@ -791,6 +794,49 @@ export async function triggerWorker(supabase: SupabaseClient<Database>) {
   }
 }
 
+async function callUploadOptimizedImages(originalPath: string): Promise<{ success: boolean; uuid?: string; filename?: string; error?: string }> {
+  try {
+    logger.debug('Calling upload-optimized-images function', { originalPath });
+    
+    const SUPABASE_URL = getEnvVar("SUPABASE_URL");
+    const SUPABASE_SERVICE_ROLE_KEY = getEnvVar("SUPABASE_SERVICE_ROLE_KEY");
+    
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/upload-optimized-images`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+      },
+      body: JSON.stringify({ original_path: originalPath })
+    });
+    
+    if (!response.ok) {
+      logger.error('Upload optimized images function call failed', { 
+        originalPath, 
+        status: response.status,
+        statusText: response.statusText
+      });
+      const errorText = await response.text();
+      return { success: false, error: `HTTP ${response.status}: ${errorText}` };
+    }
+    
+    const result = await response.json();
+    
+    logger.debug('Upload optimized images function completed', {
+      originalPath,
+      success: result.success,
+      uuid: result.uuid,
+      filename: result.filename
+    });
+    
+    return result;
+    
+  } catch (error) {
+    logger.logError(error as Error, `Failed to call upload-optimized-images function for ${originalPath}`);
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 async function processAttachments(
   attachments: File[],
   senderEmail: string,
@@ -820,6 +866,7 @@ async function processAttachments(
 
   const uploadedPaths: string[] = [];
   const errors: string[] = [];
+  const originalsToCleanup: string[] = [];
   
   for (const file of attachments) {
     logger.info('Processing file', { 
@@ -828,34 +875,25 @@ async function processAttachments(
       size: file.size 
     });
 
-    let uploadData: any = null;
-    let fileBuffer: Uint8Array | undefined;
     
     try {
       validateFile(file);
       
-      // Get or create shared buffer for this file
-      if (fileBuffers && fileBuffers.has(file.name)) {
-        fileBuffer = fileBuffers.get(file.name);
-        logger.debug('Reusing existing buffer for file', { filename: file.name });
-      }
-      
       let coordinatesString: string | null = null;
       let streetAddress: string | null = null;
-      let originalUploadData: any = null;
       
-      // Only extract GPS for image files (videos don't contain GPS data)
+      // Step 1: Upload ALL files (including videos) to originals/ folder
+      const originalFilename = generateOriginalFilename(file.name);
+      const originalUploadData = await uploadFileToStorage(supabase, file, originalFilename);
+      originalsToCleanup.push(originalUploadData.path);
+      
+      logger.debug('Original file uploaded', {
+        originalFilename: file.name,
+        originalPath: originalUploadData.path
+      });
+      
+      // Step 2: Extract GPS coordinates only for image files (videos don't contain GPS data)
       if (!file.type.includes('video')) {
-        // Step 1: Upload original file to originals/ folder for GPS extraction
-        const originalFilename = generateOriginalFilename(file.name);
-        originalUploadData = await uploadFileToStorage(supabase, file, originalFilename);
-        
-        logger.debug('Original file uploaded', {
-          originalFilename: file.name,
-          originalPath: originalUploadData.path
-        });
-        
-        // Step 2: Extract GPS coordinates from original file using extract-gps function
         coordinatesString = await callExtractGpsFunction(originalUploadData.path);
         
         // If we have coordinates, try to get street address
@@ -880,24 +918,25 @@ async function processAttachments(
         logger.debug('Skipping GPS extraction for video file', { filename: file.name });
       }
       
-      // Step 3: Process file for vision (may strip EXIF) - reuse buffer if available
-      const processedFile = await processFileForVision(file, videoFrameExtractor, fileBuffer);
-      const filename = generateUniqueFilename(processedFile.name);
+      // Step 3: Call upload-optimized-images function to process and create WebP versions
+      const optimizationResult = await callUploadOptimizedImages(originalUploadData.path);
       
-      // Step 4: Upload processed file to uploads/ folder
-      uploadData = await uploadFileToStorage(supabase, processedFile, filename);
+      if (!optimizationResult.success) {
+        throw new Error(`Image optimization failed: ${optimizationResult.error}`);
+      }
       
-      logger.debug('Processed file uploaded', {
+      logger.debug('Image optimization completed', {
         originalFilename: file.name,
-        processedPath: uploadData.path,
+        uuid: optimizationResult.uuid,
+        filename: optimizationResult.filename,
         hasGpsData: !!coordinatesString
       });
       
-      // Step 5: Create record in vehicle-photos table with GPS and location data
+      // Step 4: Create record in vehicle-photos table with full upload path and GPS data
       const { error: insertError } = await supabase
         .from("vehicle-photos")
         .upsert({
-          name: uploadData.path,
+          name: `uploads/${optimizationResult.filename}`,
           submitted_by: senderEmail,
           status: 'unprocessed',
           gps: coordinatesString,
@@ -911,34 +950,21 @@ async function processAttachments(
         throw new Error(`Failed to insert vehicle-photos record: ${insertError.message || JSON.stringify(insertError)}`);
       }
       
-      // Optional: Clean up original file after successful processing (only for image files)
-      if (originalUploadData) {
-        try {
-          await supabase.storage
-            .from("gh-vehicle-photos")
-            .remove([originalUploadData.path]);
-          logger.debug('Original file cleaned up', { originalPath: originalUploadData.path });
-        } catch (cleanupError) {
-          logger.warn('Failed to clean up original file', { 
-            originalPath: originalUploadData.path,
-            error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
-          });
-        }
-      }
-      uploadedPaths.push(uploadData.path);
+      uploadedPaths.push(`uploads/${optimizationResult.filename!}`);
       
-      logger.info('File uploaded successfully', {
+      logger.info('File processed successfully', {
         originalFilename: file.name,
-        storagePath: uploadData.path,
+        uuid: optimizationResult.uuid,
+        filename: optimizationResult.filename,
         hasLocation: !!coordinatesString,
         hasAddress: !!streetAddress
       });
       
-      await enqueue(pgmq_public, uploadData.path);
+      await enqueue(pgmq_public, `uploads/${optimizationResult.filename!}`);
       
       logger.info('File queued for processing', {
         filename: file.name,
-        path: uploadData.path
+        path: `uploads/${optimizationResult.filename!}`
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
@@ -955,6 +981,24 @@ async function processAttachments(
       }
       
 
+    }
+  }
+
+  // Step 5: Clean up ALL original files at the end
+  if (originalsToCleanup.length > 0) {
+    try {
+      await supabase.storage
+        .from("gh-vehicle-photos")
+        .remove(originalsToCleanup);
+      logger.debug('All original files cleaned up', { 
+        cleanedPaths: originalsToCleanup,
+        count: originalsToCleanup.length 
+      });
+    } catch (cleanupError) {
+      logger.warn('Failed to clean up some original files', { 
+        originalsToCleanup,
+        error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
+      });
     }
   }
 

@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "@imagemagick/magick-wasm": "^0.0.35",
     "@jsquash/jpeg": "^1.6.0",
     "@supabase/supabase-js": "^2.50.0",
     "cloudinary": "^2.7.0",

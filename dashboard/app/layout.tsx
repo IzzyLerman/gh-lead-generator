@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/lib/theme-context";
+import { QueryProvider } from "@/components/providers/query-provider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -29,12 +30,14 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen flex flex-col`}
       >
         <ThemeProvider>
-          <main className="flex-1 flex flex-col">
-            {children}
-          </main>
-          <footer className="border-t bg-background px-4 py-6 text-center text-sm text-muted-foreground">
-            Created by Izzy Lerman <a href="mailto:izzylerman14@gmail.com" className="underline hover:text-foreground">izzylerman14@gmail.com</a>
-          </footer>
+          <QueryProvider>
+            <main className="flex-1 flex flex-col">
+              {children}
+            </main>
+            <footer className="border-t bg-background px-4 py-6 text-center text-sm text-muted-foreground">
+              Created by Izzy Lerman <a href="mailto:izzylerman14@gmail.com" className="underline hover:text-foreground">izzylerman14@gmail.com</a>
+            </footer>
+          </QueryProvider>
         </ThemeProvider>
       </body>
     </html>
