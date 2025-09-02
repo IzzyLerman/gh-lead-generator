@@ -481,6 +481,7 @@ Deno.serve(async (req) => {
         const filename = `${contact.company_name}.${fileExtension}`;
         const attachments = await uploadAttachments(body.contact_id, imageBlob, filename);
         uploadedAttachments.push(...attachments);
+        break;
       } catch (error) {
         logger.error('Failed to process vehicle photo', { 
           photoId: photo.id, 

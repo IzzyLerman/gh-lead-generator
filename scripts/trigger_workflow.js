@@ -4,17 +4,17 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const mime = require('mime-types');
-const { fromBuffer: fileTypeFromBuffer } = require(path.join(__dirname, '../lambda/node_modules/file-type'));
+const { fromBuffer: fileTypeFromBuffer } = require(path.join(__dirname, '../lambda/redirectEmailsFromBucket/node_modules/file-type'));
 
-require('dotenv').config({ path: path.join(__dirname, '../lambda/.env') });
+require('dotenv').config({ path: path.join(__dirname, '../lambda/redirectEmailsFromBucket/.env') });
 
-const FormData = require(path.join(__dirname, '../lambda/node_modules/form-data'));
-const fetch = require(path.join(__dirname, '../lambda/node_modules/node-fetch'));
+const FormData = require(path.join(__dirname, '../lambda/redirectEmailsFromBucket/node_modules/form-data'));
+const fetch = require(path.join(__dirname, '../lambda/redirectEmailsFromBucket/node_modules/node-fetch'));
 
 function getEnvVar(key) {
     const value = process.env[key];
     if (!value) {
-        throw new Error(`Missing environment variable: ${key}. Check lambda/.env file.`);
+        throw new Error(`Missing environment variable: ${key}. Check lambda/redirectEmailsFromBucket/.env file.`);
     }
     return value;
 }

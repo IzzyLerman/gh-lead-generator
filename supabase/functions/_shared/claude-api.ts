@@ -269,13 +269,18 @@ function createStaticEmailTemplate(
   industryPrefix: string,
   streetName: string
 ): string {
-  const locationText = streetName ? `on ${streetName}` : 'yesterday';
+  const locationText = streetName ? `on ${streetName}` : 'last week';
   
-  return `Hi ${contactName}, 
+  return `Hi ${contactName},
 
-I spotted one of your trucks on ${streetName} (pic attached). I'm Izzy with Good Hope Advisors, and we help contractors prepare for and execute successful exits. We have a network of buyers actively seeking ${industryPrefix} businesses. By running a competitive bidding process among them, we raised a recent client's final offer by 40%. 
+I spotted one of your trucks ${locationText} and wanted to reach out. I’m Izzy with Good Hope Advisors - we specialize in helping ${industryPrefix} owners prepare for and execute successful exits.
 
-Do you have 15 minutes for a call with our Managing Director Josh next week? He can share what’s driving valuations in the market right now.`
+
+We work with a network of qualified buyers who are actively seeking ${industryPrefix} businesses. By running a competitive process among them, we recently helped a client increase their final offer by 40% compared to the first bid.
+
+
+Would you be open to a quick 15-minute call with our Managing Director, Josh, next week? He can share what’s driving valuations in the ${industryPrefix} market right now and how owners are positioning to maximize outcomes.
+`
 }
 
 function createStaticTextTemplate(
@@ -286,16 +291,18 @@ function createStaticTextTemplate(
 ): string {
   const locationText = streetName ? `on ${streetName}` : 'yesterday';
   
-  return `Hi ${contactName}, 
+  return `Hi ${contactName},
 
-I spotted one of your trucks on ${streetName} (pic attached). I'm Izzy with Good Hope Advisors, and we help contractors prepare for and execute successful exits. We have a network of buyers actively seeking ${industryPrefix} businesses. By running a competitive bidding process among them, we raised a recent client's final offer by 40%. 
+I spotted one of your trucks ${locationText} and wanted to reach out. I’m Izzy with Good Hope Advisors - we specialize in helping ${industryPrefix} owners prepare for and execute successful exits.
 
-Do you have 15 minutes for a call with our Managing Director Josh next week? He can share what’s driving valuations in the market right now.
 
-Best,
+We work with a network of qualified buyers who are actively seeking ${industryPrefix} businesses. By running a competitive process among them, we recently helped a client increase their final offer by 40% compared to the first bid.
 
-Izzy Lerman
-goodhopeadvisors.com`
+
+Would you be open to a quick 15-minute call with our Managing Director, Josh, next week? He can share what’s driving valuations in the ${industryPrefix} market right now and how owners are positioning to maximize outcomes.
+
+Best, Izzy
+www.goodhopeadvisors.com`
 }
 
 async function callClaudeAPI(prompt: string, apiKey: string, apiUrl?: string): Promise<string> {

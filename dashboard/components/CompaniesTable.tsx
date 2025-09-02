@@ -19,7 +19,7 @@ import { fetchCompaniesWithContactsAndPhotos, FilterState } from '@/lib/client-u
 import { VehiclePhotoGallery } from './VehiclePhotoGallery'
 import { Tables } from '@/types/database'
 import { Pagination } from '@/components/ui/pagination'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog'
 import { StatusDropdown } from '@/components/ui/status-dropdown'
 import { FilterModal } from '@/components/FilterModal'
 import { createLogger } from '@/utils/logger'
@@ -622,6 +622,8 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
   const [selectedCompany, setSelectedCompany] = useState<CompanyWithContactsAndPhotos | null>(null)
   const [isMessageModalOpen, setIsMessageModalOpen] = useState(false)
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false)
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false)
+  const [exportContactsType, setExportContactsType] = useState<'active' | 'sent'>('active')
   const [currentFilters, setCurrentFilters] = useState<FilterState>({ criteria: [] })
   const [editingPrimaryIndustry, setEditingPrimaryIndustry] = useState<string | null>(null)
   const [primaryIndustryValue, setPrimaryIndustryValue] = useState('')
@@ -962,6 +964,39 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
     }
   }
 
+  const handleExportSentContacts = async () => {
+    setIsExporting('sent-contacts')
+    try {
+      const { data, error } = await supabase.schema('private').rpc('export_sent_contacts_csv')
+      
+      if (error) {
+        logger.logError(error, 'Supabase error during sent contacts export')
+        throw error
+      }
+      
+      if (!data) {
+        throw new Error('No data returned from export function')
+      }
+      
+      const timestamp = new Date().toISOString().split('T')[0]
+      downloadCSV(data, `sent-contacts-${timestamp}.csv`)
+    } catch (error) {
+      logger.logError(error as Error, 'Error exporting sent contacts')
+      alert(`Failed to export sent contacts: ${(error as Error)?.message || 'Unknown error'}`)
+    } finally {
+      setIsExporting(null)
+    }
+  }
+
+  const handleExportContactsWithModal = async () => {
+    if (exportContactsType === 'active') {
+      await handleExportActiveContacts()
+    } else {
+      await handleExportSentContacts()
+    }
+    setIsExportModalOpen(false)
+  }
+
   const updateContactStatus = async (contactId: string, newStatus: string) => {
     try {
       console.log('Update contact status - contactId:', contactId, 'newStatus:', newStatus)
@@ -1285,22 +1320,59 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
             <Download className="h-4 w-4 mr-2" />
             {isExporting === 'companies' ? 'Exporting...' : 'Companies'}
           </Button>
-          <Button
-            onClick={handleExportContacts}
-            disabled={isExporting !== null}
-            variant="outline"
-          >
-            <Download className="h-4 w-4 mr-2" />
-            {isExporting === 'contacts' ? 'Exporting...' : 'Contacts'}
-          </Button>
-          <Button
-            onClick={handleExportActiveContacts}
-            disabled={isExporting !== null}
-            variant="outline"
-          >
-            <Download className="h-4 w-4 mr-2" />
-            {isExporting === 'active-contacts' ? 'Exporting...' : 'Active Contacts'}
-          </Button>
+          <Dialog open={isExportModalOpen} onOpenChange={setIsExportModalOpen}>
+            <DialogTrigger asChild>
+              <Button
+                disabled={isExporting !== null}
+                variant="outline"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Export Contacts
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Export Contacts</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label htmlFor="export-type" className="text-sm font-medium">
+                    Select contact type to export:
+                  </label>
+                  <select
+                    id="export-type"
+                    value={exportContactsType}
+                    onChange={(e) => setExportContactsType(e.target.value as 'active' | 'sent')}
+                    className="w-full px-3 py-2 border border-input bg-background rounded-md text-sm"
+                  >
+                    <option value="active">Active Contacts</option>
+                    <option value="sent">Sent Contacts</option>
+                  </select>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {exportContactsType === 'active' 
+                    ? 'Export contacts with status "active" in the special format for outreach.'
+                    : 'Export contacts with status "sent" in the special format for tracking.'}
+                </p>
+              </div>
+              <DialogFooter className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setIsExportModalOpen(false)}
+                  disabled={isExporting !== null}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleExportContactsWithModal}
+                  disabled={isExporting !== null}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  {isExporting === 'active-contacts' || isExporting === 'sent-contacts' ? 'Exporting...' : 'Export'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
         
         <Dialog>

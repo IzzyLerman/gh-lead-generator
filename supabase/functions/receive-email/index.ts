@@ -10,6 +10,7 @@ import fileType from 'https://esm.sh/file-type@16.5.4';
 import { Database } from './../_shared/database.types.ts'
 import { createLogger } from './../_shared/logger.ts'
 import { Buffer } from 'node:buffer';
+import { LambdaClient, InvokeCommand } from 'npm:@aws-sdk/client-lambda@3';
 
 interface CloudinaryUploadResponse {
   public_id: string;
@@ -796,33 +797,64 @@ export async function triggerWorker(supabase: SupabaseClient<Database>) {
 
 async function callUploadOptimizedImages(originalPath: string): Promise<{ success: boolean; uuid?: string; filename?: string; error?: string }> {
   try {
-    logger.debug('Calling upload-optimized-images function', { originalPath });
+    logger.debug('Calling upload-optimized-images Lambda function', { originalPath });
     
-    const SUPABASE_URL = getEnvVar("SUPABASE_URL");
-    const SUPABASE_SERVICE_ROLE_KEY = getEnvVar("SUPABASE_SERVICE_ROLE_KEY");
+    const AWS_ACCESS_KEY_ID = getEnvVar("AWS_ACCESS_KEY_ID");
+    const AWS_SECRET_ACCESS_KEY = getEnvVar("AWS_SECRET_ACCESS_KEY");
     
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/upload-optimized-images`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+    const lambdaClient = new LambdaClient({
+      region: "us-east-1",
+      credentials: {
+        accessKeyId: AWS_ACCESS_KEY_ID,
+        secretAccessKey: AWS_SECRET_ACCESS_KEY,
       },
-      body: JSON.stringify({ original_path: originalPath })
     });
     
-    if (!response.ok) {
-      logger.error('Upload optimized images function call failed', { 
+    const payload = {
+      httpMethod: "POST",
+      body: { original_path: originalPath },
+      headers: {
+        "Content-Type": "application/json"
+      }
+    };
+    
+    const command = new InvokeCommand({
+      FunctionName: "uploadOptimizedImages",
+      Payload: JSON.stringify(payload),
+    });
+    
+    const response = await lambdaClient.send(command);
+    
+    if (response.StatusCode !== 200) {
+      logger.error('Lambda invocation failed', { 
         originalPath, 
-        status: response.status,
-        statusText: response.statusText
+        statusCode: response.StatusCode,
+        functionError: response.FunctionError
       });
-      const errorText = await response.text();
-      return { success: false, error: `HTTP ${response.status}: ${errorText}` };
+      return { success: false, error: `Lambda invocation failed with status ${response.StatusCode}` };
     }
     
-    const result = await response.json();
+    if (!response.Payload) {
+      logger.error('Lambda response has no payload', { originalPath });
+      return { success: false, error: 'Lambda response has no payload' };
+    }
+
+    logger.info(Buffer.from(response.Payload).toString());
+    const responsePayload = JSON.parse(new TextDecoder().decode(response.Payload));
     
-    logger.debug('Upload optimized images function completed', {
+    if (responsePayload.statusCode !== 200) {
+      logger.error('Lambda function returned error', { 
+        originalPath, 
+        statusCode: responsePayload.statusCode,
+        body: responsePayload.body
+      });
+      const errorBody = typeof responsePayload.body === 'string' ? JSON.parse(responsePayload.body) : responsePayload.body;
+      return { success: false, error: errorBody.error || `HTTP ${responsePayload.statusCode}` };
+    }
+    
+    const result = typeof responsePayload.body === 'string' ? JSON.parse(responsePayload.body) : responsePayload.body;
+    
+    logger.debug('Upload optimized images Lambda function completed', {
       originalPath,
       success: result.success,
       uuid: result.uuid,
@@ -832,7 +864,7 @@ async function callUploadOptimizedImages(originalPath: string): Promise<{ succes
     return result;
     
   } catch (error) {
-    logger.logError(error as Error, `Failed to call upload-optimized-images function for ${originalPath}`);
+    logger.logError(error as Error, `Failed to call upload-optimized-images Lambda function for ${originalPath}`);
     return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
