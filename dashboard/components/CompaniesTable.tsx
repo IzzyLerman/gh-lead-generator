@@ -916,7 +916,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
     }
   }
 
-  const handleExportContacts = async () => {
+/*  const handleExportContacts = async () => {
     setIsExporting('contacts')
     try {
       const { data, error } = await supabase.schema('private').rpc('export_contacts_csv')
@@ -939,6 +939,7 @@ export default function CompaniesTable({ initialData }: CompaniesTableProps) {
       setIsExporting(null)
     }
   }
+*/
 
   const handleExportActiveContacts = async () => {
     setIsExporting('active-contacts')
